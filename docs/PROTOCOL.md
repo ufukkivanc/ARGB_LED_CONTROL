@@ -100,6 +100,50 @@ Kurallar:
 
 `{"r":108,"g":99,"b":255}`. Ek alan (`brightness` vb.) gönderilirse **yok sayılır** (bkz. §9, Flutter `LedColor.toJson` farkı).
 
+### 3.5 Parametre anlamları (hız, yoğunluk, yön) ve efekt yetenek tablosu
+
+**Hız (`speed`, 1..100)** — *büyük değer = hızlı animasyon*:
+
+| `speed` | Animasyon periyodu (bir tam döngü) |
+|---|---|
+| 1 | 5000 ms (en yavaş) |
+| 50 | 2773 ms |
+| 100 | 500 ms (en hızlı) |
+
+Formül (firmware `animation_engine.cpp` ve Flutter `speedToPeriodMs` ile **birebir aynı**, tamsayı bölme):
+`period_ms = max(200, 5000 - ((speed - 1) * 4500) / 99)`.
+Animasyon fazı sürekli birikir (`faz += dt / period`); hız değişince faz **sıfırlanmaz** ve sıçrama olmaz.
+Hızdan etkilenmeyen efektlerde (`staticColor`, `customGradient`) `speed` kabul edilir ama görsel etkisi yoktur;
+uygulama bu durumda hız kaydırıcısını gizler.
+
+**Yoğunluk (`intensity`, 0..100)** — efekte göre anlamı değişir (aşağıdaki tablo). **Yön (`direction`)**: `1` ileri, `-1` geri.
+
+| Efekt | speed | intensity anlamı | color | color2 | direction |
+|---|---|---|---|---|---|
+| staticColor | – | – | ✔ | – | – |
+| rainbow | ✔ | dağılım (şeritte kaç renk turu) | – | – | ✔ |
+| rainbowCycle | ✔ | doygunluk | – | – | – |
+| breathing | ✔ | derinlik | ✔ | – | – |
+| colorFade | ✔ | – | ✔ | ✔ | – |
+| colorWipe | ✔ | – | ✔ | ✔ (zemin) | ✔ |
+| runningLights | ✔ | dalga boyu | ✔ | – | ✔ |
+| theaterChase | ✔ | aralık | ✔ | ✔ (boşluk) | ✔ |
+| fire | ✔ | alev yüksekliği/kıvılcım | – | – | – |
+| meteorRain | ✔ | kuyruk uzunluğu | ✔ | – | ✔ |
+| twinkle | ✔ | yıldız yoğunluğu | ✔ | ✔ (zemin) | – |
+| sparkle | ✔ | kıvılcım yoğunluğu | ✔ | ✔ (zemin) | – |
+| policeLights | ✔ | – | ✔ | ✔ | – |
+| wave | ✔ | dalga boyu | ✔ | ✔ | ✔ |
+| gradientMove | ✔ | – | ✔ | ✔ | ✔ |
+| comet | ✔ | kuyruk uzunluğu | ✔ | – | ✔ |
+| pulsing | ✔ | derinlik | ✔ | – | – |
+| randomTransitions | ✔ | doygunluk | – | – | – |
+| customGradient | – | orta nokta konumu | ✔ | ✔ | – |
+| musicReactive | ✔ | darbe şiddeti | ✔ | ✔ | – |
+
+Flutter bu tabloyu `lib/models/effect_capabilities.dart` içinde tutar; firmware ile eşleşmelidir.
+Bir kontrol bir efektte etkisizse arayüz o kontrolü gizler/devre dışı bırakır.
+
 ---
 
 ## 4. Kimlik Doğrulama ve Eşleştirme
@@ -485,3 +529,25 @@ Plan:
 3. `MAX_LEDS_PER_CHANNEL=512`, `MAX_TOTAL_LEDS=1024` sınırları uygun mu?
 4. Eşleştirme penceresi 120 sn ve 4 token slotu yeterli mi?
 5. BOOT düğmesi (GPIO0) fiziksel tetikleyici olarak kullanılabilir mi (kartınızda erişilebilir mi)?
+
+## 14. Flutter İstemci Davranışı (Stage 5)
+
+- **Keşif:** Android/iOS/macOS/Windows'ta mDNS (`_http._tcp`, TXT `proto`) + doğrudan yoklama (`esp32-argb.local`, `192.168.4.1`, kayıtlı adresler);
+  Flutter Web'de tarayıcı mDNS yapamaz → yalnızca doğrudan yoklama ve elle IP girişi. Aday her zaman `GET /api/discover` ile doğrulanır
+  (`proto == 1`).
+- **Token saklama:** Android Keystore / iOS Keychain (`flutter_secure_storage`). **Web'de varsayılan: yalnızca bellek** (sekme kapanınca yeniden
+  eşleştirme). Kullanıcı açıkça "Tarayıcıda hatırla (güvenli değil)" seçerse tarayıcı depolamasına yazılır. Token log'a/URL'ye yazılmaz;
+  yalnızca `Authorization: Bearer` başlığı ve ilk WS `auth` mesajında taşınır.
+- **WS oturumu:** bağlan → `auth` → `authOk` + `state`. Komutlar en çok 20 mesaj/sn (50 ms throttle, bırakınca son değer), aynı değer tekrar
+  gönderilmez, `busy` yanıtında yalnızca son değer yeniden gönderilir. Yakın zamanda gönderilen alanlar 600 ms boyunca eski yayınlarla ezilmez.
+  Eski `rev`'li kısmi `state` yok sayılır. Ping 15 sn, 40 sn sessizlikte yeniden bağlanma; geri çekilme 1, 2, 4, 8, 15 sn;
+  3 başarısız denemeden sonra cihaz kimliğiyle yeniden aranır (IP değişmiş olabilir).
+- **Kapanış kodları:** `4401` (auth zaman aşımı/geçersiz), `4403` (token iptal) → yerel token silinir ve yeniden eşleştirme istenir;
+  `4429` → en az 60 sn bekle.
+- **Kurulum sihirbazı:** SoftAP'ye bağlan (kullanıcı sistem Wi-Fi ayarından; Web'de bilgisayarın Wi-Fi'ı elle) → `192.168.4.1` yoklama →
+  BOOT ile eşleştirme (pencere otomatik algılanır) → `POST/GET /api/wifi/scan` → SSID/şifre → `POST /api/wifi/connect` → `GET /api/wifi/status`
+  yoklaması → AP kapanırken bağlantı kaybı beklenir (3 ardışık ağ hatasından sonra yerel ağda yeniden keşfe geçilir) → `deviceId` ile yeniden bul.
+  Wi-Fi şifresi yalnızca istek gövdesinde gider, uygulama state'inde/loglarda/kalıcı depoda tutulmaz.
+- **Bilinen sınır:** Kurulum ağına OTOMATİK bağlanma (Android `WifiNetworkSpecifier`, iOS `NEHotspotConfiguration`) bu sürümde yok;
+  kullanıcı sistem Wi-Fi ayarlarına yönlendirilir. AP şifresi prototipte yalnızca seri porttan görülür.
+

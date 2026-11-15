@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:argb_controller/models/effect.dart';
 import 'package:argb_controller/models/led_color.dart';
+import 'package:argb_controller/models/protocol.dart' show speedToPeriodMs;
 import 'package:argb_controller/theme/app_colors.dart';
 
 /// A realistic simulated WS2812B addressable RGB LED strip.
@@ -27,10 +28,10 @@ class LedStripPreview extends StatefulWidget {
   });
 
   @override
-  State<LedStripPreview> createState() => _LedStripPreviewState();
+  State<LedStripPreview> createState() => LedStripPreviewState();
 }
 
-class _LedStripPreviewState extends State<LedStripPreview>
+class LedStripPreviewState extends State<LedStripPreview>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
 
@@ -43,23 +44,29 @@ class _LedStripPreviewState extends State<LedStripPreview>
     )..repeat();
   }
 
+  /// Testler için: çalışan animasyonun mevcut periyodu.
+  @visibleForTesting
+  Duration? get period => _animController.duration;
+
+  @visibleForTesting
+  double get debugProgress => _animController.value;
+
   @override
   void didUpdateWidget(covariant LedStripPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.speed != widget.speed) {
-      _animController.duration = _calculateDuration(widget.speed);
-      if (!_animController.isAnimating) {
-        _animController.repeat();
-      }
+      // KÖK NEDEN DÜZELTMESİ: Çalışan bir `repeat()` animasyonunda yalnızca
+      // `duration` değiştirmek zamanlamayı güncellemez (simülasyon eski süreyle
+      // devam eder). Yeni periyotla yeniden `repeat(period:)` çağırmak, mevcut
+      // fazı koruyarak hızı hemen değiştirir.
+      final d = _calculateDuration(widget.speed);
+      _animController.duration = d;
+      _animController.repeat(period: d);
     }
   }
 
-  Duration _calculateDuration(int speed) {
-    // Speed 1 (slow) -> 5000ms, Speed 100 (fast) -> 500ms
-    final clampedSpeed = speed.clamp(1, 100);
-    final ms = 5000 - ((clampedSpeed - 1) * (4500 / 99)).round();
-    return Duration(milliseconds: ms);
-  }
+  // Hız 1 (yavaş) -> 5000 ms, 100 (hızlı) -> 500 ms; firmware ile aynı formül.
+  Duration _calculateDuration(int speed) => Duration(milliseconds: speedToPeriodMs(speed));
 
   @override
   void dispose() {
@@ -189,9 +196,6 @@ class _LedStripPreviewState extends State<LedStripPreview>
         final hue = (160 + index * 6) % 360;
         final col = HSVColor.fromAHSV(1.0, hue.toDouble(), 0.9, 1.0).toColor();
         return _applyBrightness(col, effectiveBrightness * (0.15 + 0.85 * bar));
-
-      default:
-        return _applyBrightness(baseColor, effectiveBrightness);
     }
   }
 

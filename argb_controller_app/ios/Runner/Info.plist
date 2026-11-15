@@ -12,6 +12,17 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ESP32 ARGB denetleyicilerini yerel ağda bulmak ve kontrol etmek için gereklidir.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CFBundleName</key>
 	<string>argb_controller</string>
 	<key>CFBundlePackageType</key>

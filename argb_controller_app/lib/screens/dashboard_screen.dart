@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:argb_controller/models/effect.dart';
+import 'package:argb_controller/models/effect_capabilities.dart';
 import 'package:argb_controller/models/led_color.dart';
 import 'package:argb_controller/models/scene.dart';
 import 'package:argb_controller/providers/device_provider.dart';
+import 'package:argb_controller/screens/devices_screen.dart';
+import 'package:argb_controller/state/app_state.dart';
+import 'package:argb_controller/state/connection_controller.dart';
 import 'package:argb_controller/theme/app_colors.dart';
 import 'package:argb_controller/widgets/brightness_slider.dart';
 import 'package:argb_controller/widgets/color_wheel.dart';
@@ -43,6 +47,124 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ref.read(deviceProvider.notifier).setSpeed(speed);
   }
 
+  void _updateIntensity(int intensity) {
+    ref.read(deviceProvider.notifier).setIntensity(intensity);
+  }
+
+  void _updateSecondary(LedColor color) {
+    ref.read(deviceProvider.notifier).setSecondaryColor(color);
+  }
+
+  void _openDevices() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DevicesScreen()));
+  }
+
+  Widget _statusLine(AppMode mode, DeviceConnection conn) {
+    IconData icon = Icons.wifi;
+    Color color = AppColors.success;
+    String text = 'Simülasyon Modu';
+    if (mode == AppMode.device) {
+      final name = conn.device?.name ?? 'Cihaz seçilmedi';
+      switch (conn.status) {
+        case LinkStatus.connected:
+          text = '$name (Bağlı)';
+        case LinkStatus.connecting:
+        case LinkStatus.authenticating:
+          icon = Icons.sync;
+          color = AppColors.secondary;
+          text = '$name (Bağlanıyor…)';
+        case LinkStatus.reconnecting:
+          icon = Icons.wifi_off;
+          color = AppColors.warning;
+          text = '$name (Çevrimdışı)';
+        case LinkStatus.needsPairing:
+          icon = Icons.link_off;
+          color = AppColors.warning;
+          text = '$name (Eşleştirme gerekli)';
+        case LinkStatus.idle:
+          icon = Icons.portable_wifi_off;
+          color = AppColors.textHint;
+          text = 'Bağlı cihaz yok';
+      }
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Gerçek cihaz modunda: bağlantı uyarısı ve kanal seçici.
+  List<Widget> _deviceBanners(DeviceConnection conn, int selectedChannel) {
+    final widgets = <Widget>[];
+    if (conn.status != LinkStatus.connected) {
+      String msg;
+      switch (conn.status) {
+        case LinkStatus.needsPairing:
+          msg = conn.error ?? 'Bu cihaz için eşleştirme gerekli.';
+        case LinkStatus.reconnecting:
+          msg = 'Cihaz çevrimdışı — yeniden bağlanılıyor (deneme ${conn.attempt}). '
+              'Değişiklikler cihaza ulaşmaz.';
+        case LinkStatus.idle:
+          msg = 'Bir cihaz seçilmedi. Cihazlar ekranından ESP32 seçin veya simülasyona dönün.';
+        default:
+          msg = 'Cihaza bağlanılıyor…';
+      }
+      widgets.add(Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Expanded(child: Text(msg, style: const TextStyle(fontSize: 12))),
+            TextButton(
+              onPressed: conn.status == LinkStatus.reconnecting
+                  ? () => ref.read(connectionProvider.notifier).retryNow()
+                  : _openDevices,
+              child: Text(conn.status == LinkStatus.reconnecting ? 'Şimdi dene' : 'Cihazlar'),
+            ),
+          ],
+        ),
+      ));
+    }
+    if (conn.channels.isNotEmpty) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Wrap(
+          spacing: 8,
+          children: [
+            for (var ch = 1; ch <= 4; ch++)
+              ChoiceChip(
+                label: Text('Kanal $ch${(conn.channels[ch]?.enabled ?? false) ? '' : ' (kapalı)'}'),
+                selected: selectedChannel == ch,
+                onSelected: (conn.channels[ch]?.enabled ?? false)
+                    ? (_) => ref.read(selectedChannelProvider.notifier).state = ch
+                    : null,
+              ),
+          ],
+        ),
+      ));
+    }
+    return widgets;
+  }
+
   void _applyScene(Scene scene) {
     ref.read(deviceProvider.notifier).applyScene(scene);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -64,13 +186,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(deviceProvider);
     final currentColor = state.color.toColor();
+    final mode = ref.watch(appModeProvider);
+    final conn = ref.watch(connectionProvider);
+    final selectedChannel = ref.watch(selectedChannelProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Column(
+        title: Column(
           children: [
-            Text(
+            const Text(
               'ESP32 ARGB CONTROLLER',
               style: TextStyle(
                 fontSize: 16,
@@ -78,33 +203,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 letterSpacing: 1.2,
               ),
             ),
-            SizedBox(height: 2),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.wifi, size: 12, color: AppColors.success),
-                SizedBox(width: 4),
-                Text(
-                  'ESP32-ARGB (Simülasyon Modu)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 2),
+            _statusLine(mode, conn),
           ],
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.devices_other_rounded),
+            tooltip: 'Cihazlar',
+            onPressed: _openDevices,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Yenile',
             onPressed: () {
+              if (mode == AppMode.device) {
+                ref.read(connectionProvider.notifier).requestState();
+              }
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Cihaz durumu güncellendi (Simülasyon)'),
-                  duration: Duration(seconds: 1),
+                SnackBar(
+                  content: Text(mode == AppMode.device
+                      ? 'Cihaz durumu isteniyor…'
+                      : 'Cihaz durumu güncellendi (Simülasyon)'),
+                  duration: const Duration(seconds: 1),
                 ),
               );
             },
@@ -119,6 +240,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               children: [
+                if (mode == AppMode.device) ..._deviceBanners(conn, selectedChannel),
+
                 // ── 1. Power & Status Card ─────────────────────────────
                 _buildPowerCard(state, currentColor),
                 const SizedBox(height: 16),
@@ -226,7 +349,40 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     onEffectSelected: _updateEffect,
                     speed: state.speed,
                     onSpeedChanged: _updateSpeed,
+                    intensity: state.intensity,
+                    onIntensityChanged: _updateIntensity,
+                    supportedEffects: mode == AppMode.device ? conn.info?.supportedEffects : null,
                   ),
+                  if (effectCaps(state.effectType).color2) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 1),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'İKİNCİ RENK',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ColorWheel(
+                            color: state.secondaryColor,
+                            onColorChanged: _updateSecondary,
+                            size: 200,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ] else ...[
                   // Scenes View
                   _buildScenesGrid(),

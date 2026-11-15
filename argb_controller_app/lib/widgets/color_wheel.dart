@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:argb_controller/models/led_color.dart';
-import 'package:argb_controller/theme/app_colors.dart';
 
 /// An interactive circular HSV Color Wheel with smooth drag/tap selection
 /// and a row of quick preset color swatches.
