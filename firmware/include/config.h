@@ -48,6 +48,8 @@
 #define WS_MAX_CLIENTS              4
 #define WS_AUTH_TIMEOUT_MS          5000
 #define HTTP_MAX_BODY_BYTES         1024
+#define WS_RATE_PER_SEC             40      // istemci başına sürdürülebilir mesaj hızı (Flutter <= 20/sn)
+#define WS_RATE_BURST               30      // kısa süreli patlama kapasitesi
 
 #define AUTH_MAX_TOKENS             4
 #define PAIRING_WINDOW_MS           120000

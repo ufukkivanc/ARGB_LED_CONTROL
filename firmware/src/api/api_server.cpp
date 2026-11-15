@@ -92,6 +92,8 @@ void ApiServer::_clientAdd(uint32_t id) {
             c.used = true;
             c.id = id;
             c.connectedAt = millis();
+            c.rateTokens = WS_RATE_BURST;
+            c.rateRefillAt = c.connectedAt;
             break;
         }
     }
@@ -104,6 +106,29 @@ void ApiServer::_clientRemove(uint32_t id) {
         if (c.used && c.id == id) { memset(&c, 0, sizeof(c)); break; }
     }
     xSemaphoreGive(_clientMutex);
+}
+
+bool ApiServer::_allowMessage(uint32_t id, bool& errNow) {
+    errNow = false;
+    bool ok = true;
+    uint32_t now = millis();
+    xSemaphoreTake(_clientMutex, portMAX_DELAY);
+    for (auto& c : _clients) {
+        if (!c.used || c.id != id) continue;
+        float elapsed = (now - c.rateRefillAt) / 1000.0f;
+        c.rateRefillAt = now;
+        c.rateTokens += elapsed * WS_RATE_PER_SEC;
+        if (c.rateTokens > WS_RATE_BURST) c.rateTokens = WS_RATE_BURST;
+        if (c.rateTokens >= 1.0f) {
+            c.rateTokens -= 1.0f;
+        } else {
+            ok = false;
+            if (now - c.rateErrAt > 1000) { c.rateErrAt = now; errNow = true; }
+        }
+        break;
+    }
+    xSemaphoreGive(_clientMutex);
+    return ok;
 }
 
 size_t ApiServer::authedClientCount() {
@@ -205,6 +230,16 @@ void ApiServer::_onWsData(AsyncWebSocketClient* client, void* arg, uint8_t* data
     if (info->opcode != WS_TEXT || !info->final || info->index != 0 || info->len != len) {
         err.set(ApiError::BadJson, nullptr, "single text frame required");
         _wsSendError(client, nullptr, err);
+        return;
+    }
+
+    // Mesaj hızı sınırı (token bucket): taşan mesajlar ayrıştırılmadan atılır
+    bool rateErr = false;
+    if (!_allowMessage(client->id(), rateErr)) {
+        if (rateErr) {
+            err.set(ApiError::RateLimited, nullptr, "too many messages");
+            _wsSendError(client, nullptr, err);
+        }
         return;
     }
 

@@ -4,8 +4,12 @@
 
 namespace ApiJson {
 
+// Stage 6: 20 efektin tamamı render edilir (types.h sırasıyla).
 const char* const SUPPORTED_EFFECTS[] = {
-    "staticColor", "breathing", "pulsing", "rainbow", "rainbowCycle", "colorFade"
+    "staticColor", "rainbow", "rainbowCycle", "breathing", "colorFade", "colorWipe",
+    "runningLights", "theaterChase", "fire", "meteorRain", "twinkle", "sparkle",
+    "policeLights", "wave", "gradientMove", "comet", "pulsing", "randomTransitions",
+    "customGradient", "musicReactive"
 };
 const size_t SUPPORTED_EFFECTS_COUNT = sizeof(SUPPORTED_EFFECTS) / sizeof(SUPPORTED_EFFECTS[0]);
 

@@ -34,6 +34,9 @@ private:
         uint32_t id;
         uint32_t connectedAt;
         char     tokenId[9];
+        float    rateTokens;     // token bucket
+        uint32_t rateRefillAt;
+        uint32_t rateErrAt;      // rate_limited hata yanıtını saniyede en çok 1 kez gönder
     };
 
     using Handler = std::function<void(AsyncWebServerRequest*, const char* tokenId)>;
@@ -46,6 +49,8 @@ private:
     int  _clientIndex(uint32_t id);   // mutex dışında çağrılmaz
     void _clientAdd(uint32_t id);
     void _clientRemove(uint32_t id);
+    // true: mesaj işlenebilir. false: hız sınırı aşıldı (errNow: hata yanıtı gönderilmeli)
+    bool _allowMessage(uint32_t id, bool& errNow);
 
     // ── Komut ayrıştırma (WS ve HTTP ortak) ────────────────────────────────
     bool _parseCommand(JsonObjectConst msg, uint32_t clientId, bool allowQueries,

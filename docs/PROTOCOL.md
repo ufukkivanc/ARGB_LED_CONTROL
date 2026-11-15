@@ -94,7 +94,8 @@ comet, pulsing, randomTransitions, customGradient, musicReactive`
 
 Kurallar:
 - Bilinmeyen efekt adı → `error: invalid_value` (sessizce `staticColor`'a düşürülmez).
-- **Stage 6'ya kadar** yalnızca `staticColor, breathing, pulsing, rainbow, rainbowCycle, colorFade` render edilir; diğerleri kabul edilir ama `staticColor` gibi görünür. Cihaz bunu `info.supportedEffects` ile bildirir, uygulama desteklenmeyenleri "yakında" olarak gösterebilir.
+- **Stage 6:** 20 efektin **tamamı** firmware'de render edilir; `info.supportedEffects` 20 adın tümünü içerir. Bilinmeyen ad `invalid_value` ile
+  reddedilir; NVS'te bozuk bir efekt numarası varsa motor sessizce statik renge DÜŞMEZ, uyarı yazar ve şeridi karartır.
 
 ### 3.4 Renk gösterimi
 
@@ -127,11 +128,11 @@ uygulama bu durumda hız kaydırıcısını gizler.
 | colorFade | ✔ | – | ✔ | ✔ | – |
 | colorWipe | ✔ | – | ✔ | ✔ (zemin) | ✔ |
 | runningLights | ✔ | dalga boyu | ✔ | – | ✔ |
-| theaterChase | ✔ | aralık | ✔ | ✔ (boşluk) | ✔ |
+| theaterChase | ✔ | aralık (2..6 piksel) | ✔ | ✔ (soluk boşluk) | ✔ |
 | fire | ✔ | alev yüksekliği/kıvılcım | – | – | – |
 | meteorRain | ✔ | kuyruk uzunluğu | ✔ | – | ✔ |
-| twinkle | ✔ | yıldız yoğunluğu | ✔ | ✔ (zemin) | – |
-| sparkle | ✔ | kıvılcım yoğunluğu | ✔ | ✔ (zemin) | – |
+| twinkle | ✔ | yıldız yoğunluğu | ✔ | ✔ (soluk zemin) | – |
+| sparkle | ✔ | kıvılcım yoğunluğu | ✔ | ✔ (soluk zemin) | – |
 | policeLights | ✔ | – | ✔ | ✔ | – |
 | wave | ✔ | dalga boyu | ✔ | ✔ | ✔ |
 | gradientMove | ✔ | – | ✔ | ✔ | ✔ |
@@ -143,6 +144,34 @@ uygulama bu durumda hız kaydırıcısını gizler.
 
 Flutter bu tabloyu `lib/models/effect_capabilities.dart` içinde tutar; firmware ile eşleşmelidir.
 Bir kontrol bir efektte etkisizse arayüz o kontrolü gizler/devre dışı bırakır.
+
+### 3.6 Efekt davranışları (Stage 6)
+
+| Efekt | Davranış |
+|---|---|
+| staticColor | Tüm LED'ler `color`. |
+| rainbow | Şerit boyunca uzamsal gökkuşağı kayar; `intensity` = renk turu sayısı (0: 0,25 … 50: 1 … 100: 1,75). |
+| rainbowCycle | Tüm şerit aynı renkte, ton döngüsel değişir; `intensity` = doygunluk. |
+| breathing | `color` sinüsle nefes alır; `intensity` = derinlik (%30..%100). |
+| colorFade | `color` ↔ `color2` sinüsle geçiş. |
+| colorWipe | `color` zemin `color2` üzerine soldan silinir, sonra `color2` geri siler. |
+| runningLights | `color` sinüs parlaklık dalgası kayar; `intensity` = dalga boyu (3..40 px). |
+| theaterChase | Her S pikselde bir yanan nokta kayar; boşluk = soluk `color2`. |
+| fire | Fire2012 ısı modeli; `intensity` ↑ = daha çok kıvılcım/daha az soğuma; `hız` = kıpırdama sıklığı. Renk kullanmaz. |
+| meteorRain | Tek yönlü meteor + titreşen kuyruk; `intensity` = kuyruk uzunluğu. |
+| twinkle | Rastgele yıldızlar yumuşakça parlayıp söner (soluk `color2` zemin). |
+| sparkle | Rastgele pikseller ani parlar, hızla söner (soluk `color2` zemin). |
+| policeLights | Sol yarı `color`, sağ yarı `color2`, ikişer kısa flaş sırayla (tek LED'de renkler sırayla). |
+| wave | `color` ↔ `color2` sinüs dalgası akar; `intensity` = dalga boyu (6..56 px). |
+| gradientMove | `color`→`color2`→`color` döngüsel gradyan kayar. |
+| comet | Gidip gelen kuyruklu yıldız; baş beyaza çalar; `intensity` = kuyruk uzunluğu. |
+| pulsing | Kalp atışı (çift darbe); `intensity` = derinlik. |
+| randomTransitions | Her döngüde rastgele yeni renge yumuşak geçiş; `intensity` = doygunluk. |
+| customGradient | Statik `color`→`color2` gradyanı; `intensity` = orta nokta konumu (%5..%95). |
+| musicReactive | **Ses girişi YOK.** Donanımda mikrofon olmadığından ritmik VU çubuğu BPM ile *simüle edilir* (BPM = 40..140, hıza bağlı); `intensity` = darbe şiddeti. |
+
+`direction = -1` animasyon fazını geriye akıtır (animasyon ters oynar). Tek LED (n=1) ve çok LED durumları için her efektin n<3 dalı tanımlıdır
+(ör. meteor/comet/music tek LED'de parlaklık darbesine dönüşür).
 
 ---
 
@@ -551,3 +580,15 @@ Plan:
 - **Bilinen sınır:** Kurulum ağına OTOMATİK bağlanma (Android `WifiNetworkSpecifier`, iOS `NEHotspotConfiguration`) bu sürümde yok;
   kullanıcı sistem Wi-Fi ayarlarına yönlendirilir. AP şifresi prototipte yalnızca seri porttan görülür.
 
+## 15. Performans ve Güvenilirlik (Stage 6)
+
+- **Bloklamayan render:** Animasyonlar `loop()` (core 1) içinde 60 FPS zamanlayıcıyla çalışır, `delay()` kullanılmaz; Wi-Fi/AsyncTCP core 0'dadır,
+  bu yüzden animasyon ağ trafiğini engellemez. Faz `dt/periyot` ile birikir; kare atlama/ağ gecikmesi sıçrama üretmez (dt ≥ 1 sn yutulur).
+- **Bellek:** Durumlu efektler (fire, twinkle, sparkle) kanal başına yalnızca ilgili efekt seçilince `n` veya `2n` bayt ayırır; efekt değişince tampon temizlenir.
+  LED tamponları 3 bayt/LED. Sınırlar (kanal başına 512, toplam 1024 LED) **performans garantisi değildir**: WS2812 için ≈30 µs/LED,
+  512 LED ≈ 15 ms/kare → 60 FPS sınırda; RMT kanallarının paralel çalışması FastLED sürümüne bağlıdır ve **donanımda ölçülmemiştir**.
+- **Mesaj hızı sınırı:** WebSocket istemcisi başına token bucket (40 mesaj/sn sürekli, 30 patlama). Aşan mesajlar ayrıştırılmadan atılır;
+  `rate_limited` hatası saniyede en çok 1 kez döner. Flutter 20 mesaj/sn ile sınırlıdır.
+- **Komut kuyruğu:** 32 yuva; dolunca `busy` döner ve istemci yalnızca son değeri yeniden gönderir.
+- **NVS:** Durum yazımları 1,5 sn debounce / 10 sn azami bekleme ile birleştirilir; değişmemiş durum yazılmaz.
+- **Güvenlik:** Token + Wi-Fi şifresi loglanmaz; kaba kuvvet kilidi; eşleştirme için fiziksel onay; gövde/mesaj ≤ 1 KB; TLS yok (bkz. §4.8).
