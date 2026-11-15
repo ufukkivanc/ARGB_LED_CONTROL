@@ -10,8 +10,11 @@ public:
 
     bool begin(const String& hostname = MDNS_HOSTNAME);
     void update();
+    void setPaired(bool paired);
+    bool isRunning() const { return _initialized; }
 
 private:
     MdnsService() = default;
     bool _initialized = false;
+    bool _paired = false;
 };

@@ -50,13 +50,21 @@ String NvsStorage::getOrGenerateSetupPassword() {
         }
     }
 
-    // Generate secure deterministic device-specific password based on MAC address
-    // Example: "argb" + last 6 MAC hex characters (total 10 chars, > 8 char WPA2 requirement)
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    char defaultPass[16];
-    snprintf(defaultPass, sizeof(defaultPass), "argb%02X%02X%02X", mac[3], mac[4], mac[5]);
-    return String(defaultPass);
+    // İlk kullanımda rastgele 10 karakterlik şifre üret ve NVS'e kalıcı yaz.
+    // (Eski MAC türevi şifre tahmin edilebilirdi.) Belirsiz karakterler (0/O, 1/l/I) hariç.
+    static const char alphabet[] = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const size_t alen = sizeof(alphabet) - 1;
+    char generated[11];
+    for (int i = 0; i < 10; i++) {
+        generated[i] = alphabet[esp_random() % alen];
+    }
+    generated[10] = '\0';
+
+    if (_prefs.begin(NVS_NS_WIFI, false)) {
+        _prefs.putString(NVS_KEY_SETUP_PASS, generated);
+        _prefs.end();
+    }
+    return String(generated);
 }
 
 bool NvsStorage::saveSetupPassword(const String& password) {

@@ -13,3 +13,6 @@
 
 // ── Default Names ──────────────────────────────────────────────────────────
 #define DEFAULT_DEVICE_NAME   "ESP32 Smart ARGB Controller"
+
+// ── Stage 4B: Kimlik doğrulama (NVS) ───────────────────────────────────────
+#define NVS_NS_AUTH           "auth_cfg"

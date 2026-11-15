@@ -48,6 +48,7 @@ public:
     void setSpeed(uint8_t speed, bool save = true);
     void setDirection(int8_t direction, bool save = true);
     void setIntensity(uint8_t intensity, bool save = true);
+    void setMaxBrightness(uint8_t maxBrightness, bool save = false) { _config.maxBrightness = maxBrightness; (void)save; }
 
     void setConfig(const ChannelConfig& config, bool save = true);
     void setState(const ChannelState& state, bool save = true);

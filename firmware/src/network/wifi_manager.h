@@ -30,6 +30,7 @@ public:
     String getMacAddress() const;
     String getApSSID() const { return _apSSID; }
     String getSetupPassword() const;
+    String getLastError() const { return _lastError; }
 
     // ── Provisioning & Management ──────────────────────────────────────────
     bool submitCredentials(const String& ssid, const String& password);
@@ -39,6 +40,7 @@ public:
     // ── Asynchronous Network Scanning ──────────────────────────────────────
     bool startScan();
     bool isScanComplete();
+    void cancelScan();
     std::vector<DiscoveredNetwork> getScanResults();
 
     // ── State Change Listener ──────────────────────────────────────────────
@@ -60,6 +62,9 @@ private:
     bool _apRunning;
 
     uint32_t _connectStartTime;
+    uint32_t _apShutdownAt;     // 0 = planlanmamış
+    bool _pendingSave;          // kimlik bilgisi yalnızca bağlantı başarılı olunca NVS'e yazılır
+    String _lastError;
     uint8_t _retryCount;
 
     bool _scanning;

@@ -11,6 +11,8 @@ WiFiManager::WiFiManager()
     : _state(WiFiConnectionState::Disconnected),
       _apRunning(false),
       _connectStartTime(0),
+      _apShutdownAt(0),
+      _pendingSave(false),
       _retryCount(0),
       _scanning(false),
       _lastScanTime(0) {
@@ -92,17 +94,30 @@ void WiFiManager::update() {
             Serial.printf("[WiFiManager] Connected successfully! IP: %s, RSSI: %d dBm\n",
                           WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
-            // If AP was running purely for setup and connection succeeded, shut AP down to reduce 2.4 GHz RF load
-            if (_apRunning) {
-                WiFi.softAPdisconnect(true);
-                WiFi.mode(WIFI_STA);
-                _apRunning = false;
-                Serial.println("[WiFiManager] Provisioning complete. Shutting down setup AP.");
+            _lastError = "";
+
+            // Kimlik bilgileri yalnızca başarılı bağlantıdan sonra kalıcı yazılır
+            if (_pendingSave) {
+                NvsStorage::instance().saveWiFiCredentials(_targetSSID, _targetPassword);
+                _pendingSave = false;
+            }
+
+            // AP hemen kapatılmaz: uygulamanın sonucu okuyabilmesi için gecikmeli kapatılır
+            if (_apRunning && _apShutdownAt == 0) {
+                _apShutdownAt = millis() + AP_SHUTDOWN_DELAY_MS;
+                Serial.printf("[WiFiManager] Provisioning complete. Setup AP will close in %d s.\n",
+                              AP_SHUTDOWN_DELAY_MS / 1000);
             }
 
             _setState(WiFiConnectionState::Connected, "Connected to " + _targetSSID);
         } else if (millis() - _connectStartTime > WIFI_CONNECT_TIMEOUT_MS) {
             _retryCount++;
+            {
+                wl_status_t st = WiFi.status();
+                if (st == WL_NO_SSID_AVAIL)        _lastError = "not_found";
+                else if (st == WL_CONNECT_FAILED)  _lastError = "auth_failed";
+                else                               _lastError = "timeout";
+            }
             Serial.printf("[WiFiManager] Connection timeout (attempt %d of %d)\n",
                           _retryCount, WIFI_MAX_RETRY_ATTEMPTS);
 
@@ -117,6 +132,15 @@ void WiFiManager::update() {
             }
         }
     } else if (_state == WiFiConnectionState::Connected) {
+        // Gecikmeli AP kapatma
+        if (_apRunning && _apShutdownAt != 0 && static_cast<int32_t>(millis() - _apShutdownAt) >= 0) {
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_STA);
+            _apRunning = false;
+            _apShutdownAt = 0;
+            Serial.println("[WiFiManager] Setup AP shut down.");
+        }
+
         // Detect connection drops
         if (WiFi.status() != WL_CONNECTED) {
             Serial.println("[WiFiManager] Wi-Fi connection lost! Reconnecting...");
@@ -143,8 +167,10 @@ bool WiFiManager::submitCredentials(const String& ssid, const String& password) 
 
     Serial.printf("[WiFiManager] New Wi-Fi credentials submitted for '%s'\n", ssid.c_str());
 
-    // Save to NVS
-    NvsStorage::instance().saveWiFiCredentials(ssid, password);
+    // NVS'e yalnızca bağlantı başarılı olunca yazılır (hatalı şifre kalıcı olmasın)
+    _pendingSave = true;
+    _apShutdownAt = 0;
+    _lastError = "";
 
     // Reset attempt counter and initiate non-blocking connection
     _retryCount = 0;
@@ -158,6 +184,8 @@ void WiFiManager::resetCredentialsAndStartAP() {
     WiFi.disconnect(true);
     _targetSSID = "";
     _targetPassword = "";
+    _pendingSave = false;
+    _apShutdownAt = 0;
     startSetupAP();
 }
 
@@ -189,6 +217,11 @@ bool WiFiManager::isScanComplete() {
         return true;
     }
     return false;
+}
+
+void WiFiManager::cancelScan() {
+    WiFi.scanDelete();
+    _scanning = false;
 }
 
 std::vector<DiscoveredNetwork> WiFiManager::getScanResults() {

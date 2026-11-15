@@ -53,7 +53,7 @@ Temel ilkeler:
 
 mDNS servisleri (mevcut, `mdns_service.cpp`):
 `_http._tcp` ve `_ws._tcp` (TXT: `version`, `model`, `mac`, `endpoint`).
-**Eklenecek TXT:** `id` (cihaz kimliği), `proto=1`, `paired=0|1`.
+Stage 4B: TXT `version`, `model`, `id`, `proto=1`, `paired=0|1`. **`mac` kaldırıldı** (kimliksiz yayında gereksiz ifşa).
 
 ---
 
@@ -120,7 +120,7 @@ Kapsam dışı: ağı dinleyen saldırgan (TLS yok), cihaza fiziksel erişim.
 | İstemcide saklama | Android Keystore / iOS Keychain (`flutter_secure_storage`, Stage 5). Web geliştirmede `localStorage` (yalnızca geliştirme; belgelenmiş zayıflık) |
 | Doğrulama | Sabit zamanlı karşılaştırma (`mbedtls_ct_memcmp` benzeri) |
 | Ömür | Süresiz; iptal edilene kadar geçerli (cihazda RTC yok, süre sınırı güvenilmez) |
-| `tokenId` | Token'ın ilk 8 hex karakterinin SHA-256'sından türetilen 8 karakter; **token değil**, listelemek güvenlidir |
+| `tokenId` | SHA-256(token özeti)'nin ilk 4 baytı = 8 hex karakter; **token değil**, listelemek güvenlidir |
 
 ### 4.3 Herkese açık / korumalı uç noktalar
 
@@ -137,12 +137,12 @@ Kapsam dışı: ağı dinleyen saldırgan (TLS yok), cihaza fiziksel erişim.
 | # | Koşul | Senaryo |
 |---|---|---|
 | A | **Eşleştirme penceresi açık** (varsayılan 120 sn) | Normal durum |
-| B | İstek **SoftAP arayüzünden** geldi (istemci IP'si `192.168.4.x`) **ve** hiç token yok | İlk kurulum: WPA2 AP şifresini bilmek sahiplik kanıtıdır |
+| B | İstek **SoftAP arayüzünden** geldi **ve** hiç token yok | **Stage 4B'de varsayılan KAPALI** (`PAIRING_ALLOW_AP_FIRST_SETUP 0`): her eşleştirme fiziksel onay (BOOT) gerektirir |
 
 Pencereyi açma yolları:
 1. **BOOT düğmesine (GPIO0) 3 sn basılı tutma** — fiziksel erişim.
 2. Eşleştirilmiş bir istemciden `POST /api/pair/open` — ikinci telefon eklemek için.
-3. İlk açılışta token yokken ve cihaz AP modundayken otomatik (koşul B).
+3. ~~İlk açılışta otomatik (koşul B)~~ — Stage 4B kararıyla devre dışı; ilk kurulumda da BOOT 3 sn gerekir.
 
 Pencere açıkken kart üzerindeki LED (GPIO2) hızlı yanıp söner (LED şeridi etkilenmez).
 Pencere ilk başarılı eşleştirmeden sonra veya süre dolunca **kapanır**.
@@ -191,7 +191,7 @@ Hatalar: `403 pairing_closed`, `409 slots_full`, `429 rate_limited`.
 ### 4.8 Bilinen riskler (kabul edilen)
 
 1. **TLS yok:** Aynı ağdaki pasif dinleyen saldırgan token'ı görebilir. Azaltma: token yalnızca eşleştirme sırasında bir kez dolaşır; asıl koruma ağın WPA2/3 olmasıdır. Gelecek iş: HTTPS (kendinden imzalı sertifika + sabitleme).
-2. **Varsayılan AP şifresi MAC'ten türetiliyor** (`argb` + son 3 bayt = 24 bit). Zayıf ve tahmin edilebilir. **Öneri (Stage 4C):** ilk açılışta rastgele 10 karakterli şifre üret, NVS'e yaz, seri porta yaz. *Karar gerekli* — bkz. rapor.
+2. ~~MAC türevi AP şifresi~~ **Çözüldü (4B):** ilk AP başlatmada 10 karakterlik rastgele şifre üretilir, NVS'e yazılır ve (prototip aşamasında) yalnızca AP başlarken seri porta basılır. Seri port olmadan şifreyi öğrenmenin yolu henüz yok (etiket/QR Stage 5+).
 3. Web geliştirme sürümünde token `localStorage`'da durur.
 
 ---
@@ -466,7 +466,19 @@ Plan:
 | 5 | Flutter: bağımlılıklar, modeller, servis, ekranlar, platform izinleri | — |
 | 6 | Kalan 16 efekt | — |
 
-## 12. Açık Kararlar
+## 12. Stage 4B Uygulama Notları (belgeden sapmalar ve netleştirmeler)
+
+- Kod yerleşimi: `src/api/` (api_server, api_json, command, command_processor, snapshot), `src/auth/auth_manager`, `src/storage/persistence_scheduler`, `src/hw/button_manager`.
+- Core 0 → core 1 köprüsü: komutlar `xQueueCreate(32, sizeof(Command))` kuyruğuna; salt-okunur GET'ler `SnapshotStore` (mutex'li kopya) üzerinden. LED/Wi-Fi nesnelerine yalnızca `loop()` dokunur.
+- `ack`, komut `loop()`'ta uygulandıktan sonra gönderilir (`rev` ile). HTTP `POST /api/command` yalnızca `202 queued` döner.
+- `set` içinde `ch` **zorunlu**; `"all"` yalnızca etkin kanallara uygulanır. Etkin olmayan kanal açıkça seçilirse `channel_disabled`.
+- `setChannelConfig`: `maxBrightness` canlı uygulanır; `enabled/ledCount/colorOrder` NVS'e yazılır ve `rebootRequired` döner. Bekleyen değerler `state.channels[].pendingConfig` ile görünür. (Canlı `setConfig()` kullanılmaz: LED tamponu taşabilir.)
+- Wi-Fi kimlik bilgisi artık **yalnızca bağlantı başarılı olunca** NVS'e yazılır (hatalı şifre kalıcı olmaz). Başarıdan sonra AP 10 sn gecikmeyle kapanır. Not: ESP32'de AP kanalı STA kanalına uyduğundan, bağlanma sırasında telefon AP bağlantısını geçici kaybedebilir; uygulama `GET /api/wifi/status` yerine mDNS/IP ile yeniden bulmaya hazır olmalı.
+- Düğme: BOOT (GPIO0) boot sırasında basılıysa bırakılana kadar yok sayılır. 3 sn basılı tutup **bırakınca** eşleştirme penceresi açılır; 10 sn tutunca güvenlik sıfırlaması.
+- CORS: `Access-Control-Allow-Origin: *` (Flutter Web geliştirme). Kimlik çerezle değil başlıkla taşındığı için kabul edildi.
+- mDNS `paired` TXT'si token sayısı değişince güncellenir.
+
+## 13. Açık Kararlar
 
 1. AP şifresi: MAC türevi (mevcut) yerine rastgele üretilip NVS'e yazılsın mı? (öneri: evet)
 2. `CH1_DEFAULT_LED_COUNT` 1 → 30 yapılsın mı?

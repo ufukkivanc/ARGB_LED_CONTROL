@@ -5,6 +5,12 @@
 #include "network/wifi_manager.h"
 #include "network/mdns_service.h"
 #include "led/channel_manager.h"
+#include "api/snapshot.h"
+#include "api/command_processor.h"
+#include "api/api_server.h"
+#include "auth/auth_manager.h"
+#include "hw/button_manager.h"
+#include "storage/persistence_scheduler.h"
 
 static uint32_t lastHeartbeat = 0;
 
@@ -48,6 +54,13 @@ void setup() {
     });
 
     WiFiManager::instance().begin();
+
+    // ── Stage 4B: Kimlik doğrulama + komut kuyruğu + HTTP/WebSocket API ────
+    AuthManager::instance().begin();
+    CommandProcessor::instance().begin();
+    ApiServer::instance().begin(NvsStorage::instance().getDeviceName());
+    ButtonManager::instance().begin();
+
     Serial.println("[System] All systems initialized. Entering non-blocking loop.");
 }
 
@@ -55,9 +68,17 @@ void loop() {
     // ── Non-blocking Wi-Fi State Machine ───────────────────────────────────
     WiFiManager::instance().update();
 
+    // ── API komut kuyruğu (core 0 callback'leri -> core 1 tek yazar) ───────
+    CommandProcessor::instance().update();
+
     // ── Non-blocking 60 FPS LED Animation Scheduler ───────────────────────
     // Runs autonomously regardless of Wi-Fi connection state
     ChannelManager::instance().update();
+
+    // ── Debounce'lu NVS yazımı, düğme/LED, WebSocket bakımı ────────────────
+    PersistenceScheduler::instance().tick(millis());
+    ButtonManager::instance().update();
+    ApiServer::instance().tick();
 
     // ── Periodic System Heartbeat (every 5 seconds) ────────────────────────
     uint32_t now = millis();
