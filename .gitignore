@@ -1,0 +1,45 @@
+# ── PlatformIO toolchain / paketler (≈2 GB, proje içine kurulmuş) ──
+/.platformio/
+.pio/
+.pioenvs/
+.piolibdeps/
+firmware/.pio/
+
+# ── Flutter / Dart derleme çıktıları ──
+argb_controller_app/build/
+argb_controller_app/.dart_tool/
+argb_controller_app/.flutter-plugins
+argb_controller_app/.flutter-plugins-dependencies
+argb_controller_app/.pub-cache/
+argb_controller_app/.pub/
+argb_controller_app/**/*.iml
+argb_controller_app/android/.gradle/
+argb_controller_app/android/local.properties
+argb_controller_app/android/**/GeneratedPluginRegistrant.*
+argb_controller_app/ios/Pods/
+argb_controller_app/ios/**/xcuserdata/
+argb_controller_app/ios/Flutter/ephemeral/
+
+# ── Gizli bilgiler (asla commit'lenmemeli) ──
+*.jks
+*.keystore
+key.properties
+.env
+.env.*
+secrets.*
+*.pem
+
+# ── IDE / OS ──
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Genel ──
+*.log
+*.tmp
+*.swp
+*.bak
