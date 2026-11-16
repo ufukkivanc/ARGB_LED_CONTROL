@@ -71,7 +71,7 @@
 #define STATE_BROADCAST_INTERVAL_MS 100
 #define SNAPSHOT_REFRESH_MS         250
 
-#define AP_SHUTDOWN_DELAY_MS        10000
+#define AP_SHUTDOWN_DELAY_MS        30000   // telefon kurulum sonucunu (IP) okuyabilsin
 
 // USB seri port Wi-Fi kurulumu: yalnızca BOOT düğmesiyle açılan kısa pencerede kabul edilir
 #define SERIAL_SETUP_WINDOW_MS      120000

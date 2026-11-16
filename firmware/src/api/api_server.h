@@ -87,6 +87,14 @@ private:
     void _hReboot(AsyncWebServerRequest* r, const char* tid);
     void _hFactoryReset(AsyncWebServerRequest* r, const char* tid);
 
+    // ── Telefon kurulum sayfası (token'sız; yalnızca BOOT penceresi açıkken çalışır) ──
+    bool _setupGuard(AsyncWebServerRequest* r, bool needWindow);
+    void _hSetupPage(AsyncWebServerRequest* r);
+    void _hSetupStatus(AsyncWebServerRequest* r);
+    void _hSetupScanStart(AsyncWebServerRequest* r);
+    void _hSetupScanGet(AsyncWebServerRequest* r);
+    void _hSetupConnect(AsyncWebServerRequest* r);
+
     AsyncWebServer _server;
     AsyncWebSocket _ws;
     String _deviceName;
@@ -94,5 +102,7 @@ private:
     SemaphoreHandle_t _clientMutex = nullptr;
     WsClient _clients[WS_MAX_CLIENTS + 4];
     uint32_t _lastCleanup = 0;
+    uint32_t _setupConnectAt = 0;     // son web kurulum bağlanma isteği (millis); 0 = yok
+    bool _setupWatching = false;      // başarıda pencereyi kapatmak için izle
     bool _started = false;
 };

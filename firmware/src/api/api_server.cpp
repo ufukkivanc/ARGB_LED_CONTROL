@@ -3,6 +3,8 @@
 #include "command_processor.h"
 #include "auth/auth_manager.h"
 #include "device_id.h"
+#include "setup_page.h"
+#include "hw/serial_provisioning.h"
 #include <WiFi.h>
 
 ApiServer& ApiServer::instance() {
@@ -73,6 +75,18 @@ void ApiServer::tick() {
     }
     xSemaphoreGive(_clientMutex);
     for (size_t i = 0; i < n; i++) _ws.close(expired[i], 4401, "auth timeout");
+
+    // Web kurulumu başarılı olduysa BOOT penceresini kapat (sonuç IP'si 3 dk daha okunabilir)
+    if (_setupWatching) {
+        Snapshot s;
+        SnapshotStore::instance().getState(s);
+        if (s.wifi.state == WiFiConnectionState::Connected) {
+            SerialProvisioning::instance().closeWindow();
+            _setupWatching = false;
+        } else if (now - _setupConnectAt > 120000) {
+            _setupWatching = false;
+        }
+    }
 
     if (now - _lastCleanup > 2000) {
         _lastCleanup = now;
@@ -723,6 +737,14 @@ void ApiServer::_registerRoutes() {
     _post("/api/reboot",        true,  [this](AsyncWebServerRequest* r, const char* t) { _hReboot(r, t); });
     _post("/api/factory-reset", true,  [this](AsyncWebServerRequest* r, const char* t) { _hFactoryReset(r, t); });
 
+    // Telefon kurulum sayfası ve uç noktaları (token YOK; BOOT penceresi + X-Setup-Request şart)
+    _server.on("/", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });
+    _server.on("/setup", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });
+    _get ("/setup/status",  false, [this](AsyncWebServerRequest* r, const char*) { _hSetupStatus(r); });
+    _post("/setup/scan",    false, [this](AsyncWebServerRequest* r, const char*) { _hSetupScanStart(r); });
+    _get ("/setup/scan",    false, [this](AsyncWebServerRequest* r, const char*) { _hSetupScanGet(r); });
+    _post("/setup/connect", false, [this](AsyncWebServerRequest* r, const char*) { _hSetupConnect(r); });
+
     _server.on("/api/auth/tokens/*", HTTP_DELETE, [this](AsyncWebServerRequest* r) {
         char tid[9] = {0};
         if (!_authHttp(r, tid)) return;
@@ -997,4 +1019,78 @@ void ApiServer::_hFactoryReset(AsyncWebServerRequest* r, const char*) {
     cmd.type = CmdType::FactoryReset;
     if (!_enqueueOrError(r, cmd)) return;
     _sendSimple(r, 202, "{\"status\":\"factory_reset\"}");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Telefon kurulum sayfası (docs/PROTOCOL.md §17)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Ortak koruma: (1) X-Setup-Request başlığı (çapraz kaynaklı istekleri CORS engeller),
+// (2) needWindow ise fiziksel BOOT penceresi açık olmalı.
+bool ApiServer::_setupGuard(AsyncWebServerRequest* r, bool needWindow) {
+    ErrorInfo err;
+    if (!r->hasHeader("X-Setup-Request")) {
+        err.set(ApiError::Unauthorized, nullptr, "missing X-Setup-Request");
+        _sendError(r, err);
+        return false;
+    }
+    if (needWindow && !SerialProvisioning::instance().isOpen()) {
+        err.set(ApiError::PairingClosed, nullptr, "window_closed");
+        _sendJson(r, 403, "{\"v\":1,\"type\":\"error\",\"code\":\"window_closed\",\"message\":\"press BOOT for 3 s\"}");
+        return false;
+    }
+    return true;
+}
+
+void ApiServer::_hSetupPage(AsyncWebServerRequest* r) {
+    AsyncWebServerResponse* resp = r->beginResponse(200, "text/html; charset=utf-8", SETUP_PAGE_HTML);
+    resp->addHeader("Cache-Control", "no-store");
+    resp->addHeader("X-Frame-Options", "DENY");
+    resp->addHeader("Content-Security-Policy",
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
+    r->send(resp);
+}
+
+void ApiServer::_hSetupStatus(AsyncWebServerRequest* r) {
+    if (!_setupGuard(r, false)) return;
+    Snapshot s;
+    SnapshotStore::instance().getState(s);
+    SerialProvisioning& win = SerialProvisioning::instance();
+    bool open = win.isOpen();
+    // SSID/IP yalnızca pencere açıkken veya kurulum isteğinden sonraki 3 dk içinde gösterilir
+    bool recent = _setupConnectAt != 0 && (millis() - _setupConnectAt) < 180000;
+
+    JsonDocument d;
+    d["v"] = API_PROTO_VERSION;
+    d["deviceId"] = getDeviceId();
+    d["window"] = open;
+    d["remainingMs"] = win.remainingMs();
+    d["state"] = ApiJson::wifiStateString(s.wifi.state);
+    d["apActive"] = s.wifi.apActive;
+    if (s.wifi.error[0]) d["error"] = s.wifi.error;
+    if ((open || recent) && s.wifi.state == WiFiConnectionState::Connected) {
+        d["ssid"] = s.wifi.ssid;
+        d["ip"] = s.wifi.ip;
+    }
+    String out;
+    serializeJson(d, out);
+    _sendJson(r, 200, out);
+}
+
+void ApiServer::_hSetupScanStart(AsyncWebServerRequest* r) {
+    if (!_setupGuard(r, true)) return;
+    _hWifiScanStart(r, "");
+}
+
+void ApiServer::_hSetupScanGet(AsyncWebServerRequest* r) {
+    if (!_setupGuard(r, true)) return;
+    _hWifiScanGet(r, "");
+}
+
+void ApiServer::_hSetupConnect(AsyncWebServerRequest* r) {
+    if (!_setupGuard(r, true)) return;
+    _setupConnectAt = millis();
+    _setupWatching = true;
+    _hWifiConnect(r, "");   // doğrulama + komut kuyruğu; şifre loglanmaz
 }

@@ -619,6 +619,34 @@ yalnızca bağlantı **başarılı** olunca NVS'e yazılır; sonraki açılışl
 Port DTR/RTS yükseltilmeden açılır (otomatik reset'i önlemek için); yine de kart resetlenirse istemci `hello`'yu boot süresince yeniden dener.
 Kurulum sonrası uygulama cihazı yerel ağ IP'siyle açar; kontrol için eşleştirme (token) gerekir ve BOOT'tan açılan eşleştirme penceresi (120 sn) hâlâ açıksa otomatik tamamlanır.
 
+## 17. Telefon Kurulum Sayfası (SoftAP web arayüzü)
+
+ESP32 kurulum modundayken (SoftAP `ESP32-ARGB-Setup-XXXX`) telefon tarayıcısından **`http://192.168.4.1/`** açılır
+(`/setup` aynı sayfa; ev ağındayken `http://<ip>/` veya `http://esp32-argb.local/` ile de erişilir). Sayfa firmware içine gömülüdür
+(`firmware/src/api/setup_page.h`), mobil uyumludur, harici kaynak yüklemez.
+
+**Fiziksel yetkilendirme:** Tarama ve bağlanma yalnızca BOOT düğmesiyle (3 sn basılı tutup bırak) açılan 120 sn'lik kurulum penceresinde çalışır
+(USB seri kurulumla AYNI pencere). Pencere kapalıyken sunucu `403 window_closed` döner; sayfa bunu ve ilk kurulum adımlarını kullanıcıya anlatır.
+Başarılı bağlantıdan sonra pencere kapanır.
+
+| Uç nokta | Koşul | İşlev |
+|---|---|---|
+| `GET /`, `GET /setup` | – | Kurulum sayfası (CSP, `X-Frame-Options: DENY`) |
+| `GET /setup/status` | `X-Setup-Request` | `{window, remainingMs, state, apActive, error?, ssid?, ip?}` — `ssid`/`ip` yalnızca pencere açıkken veya bağlanma isteğinden sonraki 3 dk içinde |
+| `POST /setup/scan`, `GET /setup/scan` | `X-Setup-Request` + pencere açık | Mevcut tarama mekanizması (≤ 20 ağ) |
+| `POST /setup/connect` | `X-Setup-Request` + pencere açık | `{ssid, password}` → mevcut `WifiConnect` komut kuyruğu |
+
+`X-Setup-Request: 1` başlığı zorunludur: özel başlık CORS ön kontrolünü (preflight) tetikler ve izin listesinde olmadığı için başka bir sitenin
+(CSRF) bu uç noktaları çağırması engellenir. Bilgi **token gerektirmez** (telefonda token yok); koruma fiziksel BOOT onayıdır.
+Token'lı `/api/wifi/*` uç noktaları (daha önce BOOT ile eşleşmiş istemciler) aynen çalışır.
+
+**Gizlilik:** SSID'ler yalnızca `textContent` ile DOM'a yazılır (XSS yok); şifre alanı gönderimden sonra temizlenir; sayfada `console.*`/depolama yok.
+Firmware ev Wi-Fi'ının SSID'sini ve şifresini seri loga yazmaz (yalnızca kurulum SoftAP'sinin kendi şifresi, prototip için AP başlarken gösterilir).
+Bilgiler yalnızca bağlantı **başarılı** olunca NVS'e kaydedilir; yeniden başlatmada otomatik bağlanılır.
+
+**Sınır:** ESP32 AP kanalı, bağlanılan modemin kanalına uyar; bu yüzden bağlanma sırasında telefon kurulum ağından düşebilir. Kurulum ağı başarıdan 30 sn sonra
+kapanır (`AP_SHUTDOWN_DELAY_MS`). Sayfa IP'yi gösteremeden bağlantı koparsa kullanıcıya uygulamayla/`esp32-argb.local` ile bulma yönergesi gösterilir.
+
 ### 16.1 İstemci toleransı ve hata ayıklama (USB seri)
 
 - **Yanıt biçimi:** Flutter istemcisi hem `ARGB:{...}` (önekli) hem öneksiz çıplak `{...}` JSON satırlarını kabul eder; JSON nesnesinde string bir `type` alanı

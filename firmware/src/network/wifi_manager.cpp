@@ -33,7 +33,7 @@ void WiFiManager::begin() {
     // Check saved credentials from NVS
     String savedSSID, savedPass;
     if (NvsStorage::instance().loadWiFiCredentials(savedSSID, savedPass) && savedSSID.length() > 0) {
-        Serial.printf("[WiFiManager] Found saved network credentials for SSID: '%s'\n", savedSSID.c_str());
+        Serial.println("[WiFiManager] Found saved network credentials (not logged).");
         _targetSSID = savedSSID;
         _targetPassword = savedPass;
         _retryCount = 0;
@@ -54,12 +54,13 @@ void WiFiManager::_startStaConnection(const String& ssid, const String& password
         WiFi.mode(WIFI_STA);
     }
 
-    Serial.printf("[WiFiManager] Connecting to '%s' (Attempt %d/%d)...\n",
-                  ssid.c_str(), _retryCount + 1, WIFI_MAX_RETRY_ATTEMPTS);
+    // SSID/şifre loglanmaz (kurulum bilgisi gizliliği)
+    Serial.printf("[WiFiManager] Connecting to Wi-Fi (Attempt %d/%d)...\n",
+                  _retryCount + 1, WIFI_MAX_RETRY_ATTEMPTS);
 
     WiFi.begin(ssid.c_str(), password.c_str());
     _connectStartTime = millis();
-    _setState(WiFiConnectionState::Connecting, "Connecting to " + ssid);
+    _setState(WiFiConnectionState::Connecting, "Connecting");
 }
 
 void WiFiManager::startSetupAP() {
@@ -109,7 +110,7 @@ void WiFiManager::update() {
                               AP_SHUTDOWN_DELAY_MS / 1000);
             }
 
-            _setState(WiFiConnectionState::Connected, "Connected to " + _targetSSID);
+            _setState(WiFiConnectionState::Connected, "Connected");
         } else if (millis() - _connectStartTime > WIFI_CONNECT_TIMEOUT_MS) {
             _retryCount++;
             {
@@ -125,7 +126,7 @@ void WiFiManager::update() {
                 _startStaConnection(_targetSSID, _targetPassword);
             } else {
                 Serial.println("[WiFiManager] All connection attempts failed. Activating Setup AP.");
-                _setState(WiFiConnectionState::ConnectionFailed, "Failed to connect to " + _targetSSID);
+                _setState(WiFiConnectionState::ConnectionFailed, "Failed to connect");
                 if (!_apRunning) {
                     startSetupAP();
                 }
@@ -165,7 +166,7 @@ bool WiFiManager::submitCredentials(const String& ssid, const String& password) 
         return false;
     }
 
-    Serial.printf("[WiFiManager] New Wi-Fi credentials submitted for '%s'\n", ssid.c_str());
+    Serial.println("[WiFiManager] New Wi-Fi credentials submitted (not logged).");
 
     // NVS'e yalnızca bağlantı başarılı olunca yazılır (hatalı şifre kalıcı olmasın)
     _pendingSave = true;

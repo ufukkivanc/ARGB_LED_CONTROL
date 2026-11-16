@@ -62,6 +62,47 @@ void main() {
     });
   });
 
+  group('telefon kurulum sayfası (firmware)', skip: available ? false : 'firmware/ bulunamadı', () {
+    final page = File('../firmware/src/api/setup_page.h');
+    final server = File('../firmware/src/api/api_server.cpp');
+    final wifi = File('../firmware/src/network/wifi_manager.cpp');
+
+    String code(File f) => f
+        .readAsLinesSync()
+        .where((l) => !l.trimLeft().startsWith('//'))
+        .join(' ');
+
+    test('sayfa XSS-güvenli ve gizli bilgi sızdırmaz', () {
+      final src = code(page);
+      expect(src.contains('innerHTML'), isFalse, reason: 'SSID textContent ile yazılmalı');
+      expect(src.contains('console.'), isFalse, reason: 'şifre/SSID loglanmamalı');
+      expect(src.contains('localStorage'), isFalse);
+      expect(src.contains('sessionStorage'), isFalse);
+      expect(src.contains('textContent'), isTrue);
+      expect(src.contains('X-Setup-Request'), isTrue);
+      expect(src.contains('viewport'), isTrue, reason: 'mobil uyumlu');
+    });
+
+    test('tarama ve bağlanma uç noktaları BOOT penceresi korumasını kullanır', () {
+      final src = code(server);
+      expect(RegExp(r'_setupGuard\(r, true\)').allMatches(src).length, greaterThanOrEqualTo(3));
+      expect(src.contains('SerialProvisioning::instance().isOpen()'), isTrue);
+      expect(src.contains('"X-Setup-Request"'), isTrue);
+    });
+
+    test('Wi-Fi yöneticisi SSID/şifreyi seri loga yazmaz', () {
+      final src = code(wifi);
+      final prints = RegExp(r'Serial\.print[a-z]*\([^;]*;').allMatches(src).map((m) => m.group(0)!);
+      for (final p in prints) {
+        // İSTİSNA (4B kararı): kurulum SoftAP'sinin kendi şifresi prototipte seri porttan gösterilir.
+        // Ev Wi-Fi'ının SSID/şifresi ASLA yazılmaz.
+        if (p.contains('Device-Specific Secure Key')) continue;
+        expect(p.contains('_targetSSID') || p.contains('savedSSID') || p.contains('_targetPassword'), isFalse, reason: p);
+        expect(RegExp(r'ssid\.c_str\(\)|password\.c_str\(\)').hasMatch(p), isFalse, reason: p);
+      }
+    });
+  });
+
   group('Flutter efekt kataloğu', () {
     test('20 efektin hepsi listede ve yetenek tablosunda var', () {
       final listed = Effect.builtInEffects.map((e) => e.type).toSet();
