@@ -5,6 +5,10 @@
 #include "device_id.h"
 #include "setup_page.h"
 #include "hw/serial_provisioning.h"
+#include "wled/wled_compat.h"
+#if ENABLE_WLED_COMPAT
+#include "wled/wled_map.h"
+#endif
 #include <WiFi.h>
 
 ApiServer& ApiServer::instance() {
@@ -43,6 +47,8 @@ void ApiServer::begin(const String& deviceName) {
                        void* arg, uint8_t* data, size_t len) {
         _onWsEvent(s, c, t, arg, data, len);
     });
+    // Tarayıcı kaynaklı WebSocket yükseltmelerini (cross-site WebSocket hijacking) işaretle; hiçbir isteği reddetmez.
+    _ws.setFilter([this](AsyncWebServerRequest* r) { return _wsUpgradeFilter(r); });
     _server.addHandler(&_ws);
 
     _registerRoutes();
@@ -145,6 +151,64 @@ bool ApiServer::_allowMessage(uint32_t id, bool& errNow) {
     return ok;
 }
 
+bool ApiServer::_wsUpgradeFilter(AsyncWebServerRequest* r) {
+#if ENABLE_WLED_COMPAT
+    if (r->hasHeader("Upgrade")) {
+        String host = r->hasHeader("Host") ? r->header("Host") : String("");
+        String origin = r->hasHeader("Origin") ? r->header("Origin") : String("");
+        bool foreign = !wled::hostAllowed(host.c_str(), MDNS_HOSTNAME) ||
+                       !wled::originAllowed(origin.c_str(), host.c_str());
+        UpgradeInfo& u = _upg[_upgNext++ % 8];
+        u.conn = r->client();
+        u.foreign = foreign;
+    }
+#else
+    (void)r;
+#endif
+    return true;   // yalnızca kayıt: yönlendirme davranışı değişmez
+}
+
+bool ApiServer::clientForeignOrigin(uint32_t clientId) {
+    bool f = false;
+    xSemaphoreTake(_clientMutex, portMAX_DELAY);
+    for (auto& c : _clients) {
+        if (c.used && c.id == clientId) { f = c.foreign; break; }
+    }
+    xSemaphoreGive(_clientMutex);
+    return f;
+}
+
+void ApiServer::setClientWled(uint32_t clientId, bool wled) {
+    xSemaphoreTake(_clientMutex, portMAX_DELAY);
+    for (auto& c : _clients) {
+        if (c.used && c.id == clientId) { c.wled = wled; break; }
+    }
+    xSemaphoreGive(_clientMutex);
+}
+
+size_t ApiServer::wledClientCount() {
+    size_t n = 0;
+    xSemaphoreTake(_clientMutex, portMAX_DELAY);
+    for (auto& c : _clients) if (c.used && c.wled) n++;
+    xSemaphoreGive(_clientMutex);
+    return n;
+}
+
+void ApiServer::broadcastWled(const String& msg) {
+    if (!_started) return;
+    uint32_t ids[WS_MAX_CLIENTS + 4];
+    size_t n = 0;
+    xSemaphoreTake(_clientMutex, portMAX_DELAY);
+    for (auto& c : _clients) {
+        if (c.used && c.wled && !c.authed && n < (sizeof(ids) / sizeof(ids[0]))) ids[n++] = c.id;
+    }
+    xSemaphoreGive(_clientMutex);
+    for (size_t i = 0; i < n; i++) {
+        AsyncWebSocketClient* c = _ws.client(ids[i]);
+        if (c && c->status() == WS_CONNECTED && !c->queueIsFull()) c->text(msg);
+    }
+}
+
 size_t ApiServer::authedClientCount() {
     size_t n = 0;
     xSemaphoreTake(_clientMutex, portMAX_DELAY);
@@ -216,7 +280,21 @@ void ApiServer::_onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client, AwsEve
                 return;
             }
             _clientAdd(client->id());
+            {
+                bool foreign = false;
+                for (const auto& u : _upg) {
+                    if (u.conn == client->client()) { foreign = u.foreign; break; }
+                }
+                xSemaphoreTake(_clientMutex, portMAX_DELAY);
+                for (auto& c : _clients) {
+                    if (c.used && c.id == client->id()) { c.foreign = foreign; break; }
+                }
+                xSemaphoreGive(_clientMutex);
+            }
             Serial.printf("[API] WS client %u connected (awaiting auth).\n", client->id());
+#if ENABLE_WLED_COMPAT
+            WledCompat::instance().onWsConnect(client);   // yalnızca WLED modu açıksa çerçeve gönderir
+#endif
             break;
         }
         case WS_EVT_DISCONNECT:
@@ -257,6 +335,10 @@ void ApiServer::_onWsData(AsyncWebSocketClient* client, void* arg, uint8_t* data
         return;
     }
 
+#if ENABLE_WLED_COMPAT
+    if (WledCompat::instance().handleWsPlain(client, data, len)) return;
+#endif
+
     JsonDocument doc;
     DeserializationError de = deserializeJson(doc, reinterpret_cast<const char*>(data), len);
     if (de || !doc.is<JsonObject>()) {
@@ -271,6 +353,12 @@ void ApiServer::_onWsData(AsyncWebSocketClient* client, void* arg, uint8_t* data
     if (msg["id"].is<const char*>()) {
         strncpy(reqId, msg["id"].as<const char*>(), 12);
     }
+
+#if ENABLE_WLED_COMPAT
+    // WLED protokolü: üst düzey string "type" alanı YOKTUR (bizim mesajlarımızda her zaman vardır).
+    // Mod KAPALI ise buraya hiç girilmez; salt-okunur/kontrol kuralları WledCompat içinde uygulanır.
+    if (!msg["type"].is<const char*>() && WledCompat::instance().handleWsMessage(client, msg)) return;
+#endif
 
     // Sürüm
     if (msg["v"].isNull()) {
@@ -315,6 +403,7 @@ void ApiServer::_onWsData(AsyncWebSocketClient* client, void* arg, uint8_t* data
             for (auto& c : _clients) {
                 if (c.used && c.id == client->id()) {
                     c.authed = true;
+                    c.wled = false;   // kendi protokolümüzü konuşuyor: WLED çerçeveleri kesilir
                     strncpy(c.tokenId, tokenId, 8);
                     break;
                 }
@@ -745,6 +834,13 @@ void ApiServer::_registerRoutes() {
     _get ("/setup/scan",    false, [this](AsyncWebServerRequest* r, const char*) { _hSetupScanGet(r); });
     _post("/setup/connect", false, [this](AsyncWebServerRequest* r, const char*) { _hSetupConnect(r); });
 
+#if ENABLE_WLED_COMPAT
+    WledCompat::instance().registerRoutes(_server);
+#endif
+    // WLED erişim modu (token zorunlu; "control" için ek olarak fiziksel BOOT onayı)
+    _get ("/api/wled", true, [this](AsyncWebServerRequest* r, const char* t) { _hWledGet(r, t); });
+    _post("/api/wled", true, [this](AsyncWebServerRequest* r, const char* t) { _hWledSet(r, t); });
+
     _server.on("/api/auth/tokens/*", HTTP_DELETE, [this](AsyncWebServerRequest* r) {
         char tid[9] = {0};
         if (!_authHttp(r, tid)) return;
@@ -1093,4 +1189,54 @@ void ApiServer::_hSetupConnect(AsyncWebServerRequest* r) {
     _setupConnectAt = millis();
     _setupWatching = true;
     _hWifiConnect(r, "");   // doğrulama + komut kuyruğu; şifre loglanmaz
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  WLED erişim modu yönetimi (token gerekir)
+// ════════════════════════════════════════════════════════════════════════════
+
+void ApiServer::_hWledGet(AsyncWebServerRequest* r, const char*) {
+    JsonDocument d;
+#if ENABLE_WLED_COMPAT
+    d["compiled"] = true;
+    d["mode"] = wledModeName(WledCompat::instance().mode());
+    d["mdnsService"] = "_wled._tcp";
+    d["note"] = "readonly/control: /json/* ve WLED WebSocket TOKENSIZ erisime aciktir (yerel ag)";
+#else
+    d["compiled"] = false;
+    d["mode"] = "off";
+#endif
+    String out;
+    serializeJson(d, out);
+    _sendJson(r, 200, out);
+}
+
+void ApiServer::_hWledSet(AsyncWebServerRequest* r, const char*) {
+    ErrorInfo err;
+#if ENABLE_WLED_COMPAT
+    JsonDocument body;
+    if (!_parseBody(r, body, err, false)) { _sendError(r, err); return; }
+    WledMode m;
+    if (!body["mode"].is<const char*>() || !wledModeFromName(body["mode"].as<const char*>(), m)) {
+        err.set(ApiError::InvalidValue, "mode", "off | readonly | control");
+        _sendError(r, err);
+        return;
+    }
+    // Kimlik doğrulamasız LED kontrolünü açmak = güvenlik kararı: fiziksel BOOT onayı şart.
+    if (m == WledMode::Control &&
+        !(AuthManager::instance().isPairingOpen() || SerialProvisioning::instance().isOpen())) {
+        err.set(ApiError::PairingClosed, nullptr, "control mode needs physical confirmation: hold BOOT 3 s");
+        _sendError(r, err);
+        return;
+    }
+    if (!WledCompat::instance().setMode(m)) {
+        err.set(ApiError::Internal, nullptr, "could not persist mode");
+        _sendError(r, err);
+        return;
+    }
+    _hWledGet(r, "");
+#else
+    err.set(ApiError::NotFound, nullptr, "WLED compatibility not compiled in");
+    _sendError(r, err);
+#endif
 }

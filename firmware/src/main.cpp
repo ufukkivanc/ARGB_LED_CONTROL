@@ -11,6 +11,7 @@
 #include "auth/auth_manager.h"
 #include "hw/button_manager.h"
 #include "hw/serial_provisioning.h"
+#include "wled/wled_compat.h"
 #include "storage/persistence_scheduler.h"
 
 static uint32_t lastHeartbeat = 0;
@@ -62,6 +63,9 @@ void setup() {
     ApiServer::instance().begin(NvsStorage::instance().getDeviceName());
     ButtonManager::instance().begin();
     SerialProvisioning::instance().begin();
+#if ENABLE_WLED_COMPAT
+    WledCompat::instance().begin();   // erişim modu NVS'ten (varsayılan: KAPALI)
+#endif
 
     Serial.println("[System] All systems initialized. Entering non-blocking loop.");
 }
@@ -81,6 +85,9 @@ void loop() {
     PersistenceScheduler::instance().tick(millis());
     ButtonManager::instance().update();
     SerialProvisioning::instance().update();
+#if ENABLE_WLED_COMPAT
+    WledCompat::instance().tick();
+#endif
     ApiServer::instance().tick();
 
     // ── Periodic System Heartbeat (every 5 seconds) ────────────────────────

@@ -395,6 +395,24 @@ class WifiStatus {
   }
 }
 
+/// WLED uyumluluk katmanının erişim modu (docs/WLED_COMPAT.md).
+/// off: kapalı (varsayılan) · readonly: /json/* ve WS durumu TOKENSİZ okunabilir ·
+/// control: ek olarak TOKENSİZ yazma (açmak için fiziksel BOOT onayı gerekir).
+class WledAccess {
+  final bool compiled; // firmware ENABLE_WLED_COMPAT ile mi derlendi?
+  final String mode; // off | readonly | control
+  const WledAccess({required this.compiled, required this.mode});
+
+  static WledAccess? tryParse(dynamic j) {
+    if (j is! Map) return null;
+    final m = j['mode'];
+    return WledAccess(
+      compiled: j['compiled'] == true,
+      mode: (m == 'readonly' || m == 'control') ? m as String : 'off',
+    );
+  }
+}
+
 class PairedClient {
   final String tokenId;
   final String clientName;

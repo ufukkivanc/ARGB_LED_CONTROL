@@ -39,6 +39,13 @@
 #define FIRMWARE_VERSION          "1.0.0"
 #define DEVICE_MODEL              "ESP32-WROOM-32"
 
+// ── WLED uyumluluk katmanı (docs/WLED_COMPAT.md) ───────────────────────────
+// 1: derlemeye dahil (erişim modu NVS'te, varsayılan KAPALI). 0: modül tamamen çıkarılır.
+// Kapatmak için platformio.ini: -D ENABLE_WLED_COMPAT=0  (veya env:esp32dev_nowled)
+#ifndef ENABLE_WLED_COMPAT
+#define ENABLE_WLED_COMPAT          1
+#endif
+
 // ── Stage 4B: API / Güvenlik / Kalıcılık (bkz. docs/PROTOCOL.md) ────────────
 #define API_PROTO_VERSION           1
 #define MAX_LEDS_PER_CHANNEL        512     // Henüz performans garantisi DEĞİLDİR

@@ -25,6 +25,14 @@ public:
 
     const String& deviceName() const { return _deviceName; }
 
+    // WLED uyumluluğu (ENABLE_WLED_COMPAT): WS istemcisi WLED protokolüyle mi konuşuyor?
+    void setClientWled(uint32_t clientId, bool wled);
+    void broadcastWled(const String& msg);
+    size_t wledClientCount();
+    size_t wsClientCount() { return _ws.count(); }
+    // Tarayıcıdan (yabancı Origin / şüpheli Host) yükseltilmiş WS bağlantısı mı? WLED (tokensiz) yolu bunlara KAPALIDIR.
+    bool clientForeignOrigin(uint32_t clientId);
+
 private:
     ApiServer();
 
@@ -34,6 +42,8 @@ private:
         uint32_t id;
         uint32_t connectedAt;
         char     tokenId[9];
+        bool     foreign;        // WS yükseltmesi yabancı Origin/Host ile geldi (tarayıcı kaynaklı)
+        bool     wled;           // WLED WebSocket istemcisi (auth yapmadı; WLED çerçeveleri alır)
         float    rateTokens;     // token bucket
         uint32_t rateRefillAt;
         uint32_t rateErrAt;      // rate_limited hata yanıtını saniyede en çok 1 kez gönder
@@ -86,6 +96,8 @@ private:
     void _hWifiReset(AsyncWebServerRequest* r, const char* tid);
     void _hReboot(AsyncWebServerRequest* r, const char* tid);
     void _hFactoryReset(AsyncWebServerRequest* r, const char* tid);
+    void _hWledGet(AsyncWebServerRequest* r, const char* tid);
+    void _hWledSet(AsyncWebServerRequest* r, const char* tid);
 
     // ── Telefon kurulum sayfası (token'sız; yalnızca BOOT penceresi açıkken çalışır) ──
     bool _setupGuard(AsyncWebServerRequest* r, bool needWindow);
@@ -102,6 +114,15 @@ private:
     SemaphoreHandle_t _clientMutex = nullptr;
     WsClient _clients[WS_MAX_CLIENTS + 4];
     uint32_t _lastCleanup = 0;
+
+    // WS yükseltme isteklerinin Origin/Host değerlendirmesi (AsyncClient* -> yabancı mı)
+    struct UpgradeInfo {
+        const void* conn;
+        bool foreign;
+    };
+    UpgradeInfo _upg[8] = {};
+    uint8_t _upgNext = 0;
+    bool _wsUpgradeFilter(AsyncWebServerRequest* r);
     uint32_t _setupConnectAt = 0;     // son web kurulum bağlanma isteği (millis); 0 = yok
     bool _setupWatching = false;      // başarıda pencereyi kapatmak için izle
     bool _started = false;

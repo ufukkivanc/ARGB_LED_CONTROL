@@ -658,3 +658,9 @@ kapanır (`AP_SHUTDOWN_DELAY_MS`). Sayfa IP'yi gösteremeden bağlantı koparsa 
 - **Günlük:** Ekranda "Seri iletişim günlüğü" (kopyalanabilir, 150 satır). Wi-Fi şifresi, SSID, tarama sonucundaki ağ adları ve AP şifre satırı **maskelenir**
   (`SerialDebugLog.redact`).
 - **Gerçek donanım testi:** `ESP32_COM_PORT=COM3 flutter test test/hardware/real_esp32_test.dart` (varsayılan olarak atlanır).
+
+## 18. WLED uyumluluğu
+
+WLED iPhone/Android uygulaması için ayrı, derleme zamanında çıkarılabilir bir katman vardır: **docs/WLED_COMPAT.md**
+(`GET/POST /api/wled` erişim modu — token zorunlu; `control` için ek fiziksel BOOT onayı). Varsayılan mod `off`'tur.
+Kendi `/ws` protokolümüz değişmedi: üst düzey string `type` alanı taşıyan mesajlar bu protokolündür; taşımayanlar (yalnızca mod `off` değilse) WLED kabul edilir.

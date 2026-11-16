@@ -106,6 +106,21 @@ class DeviceApi {
 
   Future<void> openPairing() => _send('POST', '/api/pair/open');
 
+  /// WLED uyumluluk erişim modu (token gerekir). "control" için ESP32'de BOOT penceresi açık olmalıdır.
+  Future<WledAccess> wledAccess() async {
+    final j = await _send('GET', '/api/wled');
+    final w = WledAccess.tryParse(j);
+    if (w == null) throw const ApiException('bad_response');
+    return w;
+  }
+
+  Future<WledAccess> setWledMode(String mode) async {
+    final j = await _send('POST', '/api/wled', body: {'mode': mode});
+    final w = WledAccess.tryParse(j);
+    if (w == null) throw const ApiException('bad_response');
+    return w;
+  }
+
   Future<void> startWifiScan() => _send('POST', '/api/wifi/scan');
 
   /// (running, ağlar)

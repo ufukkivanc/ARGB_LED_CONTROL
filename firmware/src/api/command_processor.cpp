@@ -7,6 +7,7 @@
 #include "network/mdns_service.h"
 #include "storage/nvs_storage.h"
 #include "storage/persistence_scheduler.h"
+#include "wled/wled_compat.h"
 
 static bool sameState(const ChannelState& a, const ChannelState& b) {
     return a.isOn == b.isOn &&
@@ -324,6 +325,9 @@ void CommandProcessor::_broadcastChanges(uint32_t now) {
     Snapshot s;
     SnapshotStore::instance().getState(s);
     ApiServer::instance().broadcastAuthed(ApiJson::buildState(s, _changedMask, true));
+#if ENABLE_WLED_COMPAT
+    WledCompat::instance().notifyStateChanged();
+#endif
     _changedMask = 0;
 }
 

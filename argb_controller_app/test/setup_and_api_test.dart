@@ -156,6 +156,50 @@ void main() {
     });
   });
 
+  group('WLED erişim modu (DeviceApi)', () {
+    test('varsayılan KAPALI; readonly token ile açılır; control fiziksel onay ister', () async {
+      final esp = FakeEsp32Http()..validToken = 'a' * 64;
+      final api = DeviceApi(host: 'x', token: 'a' * 64, client: esp.client());
+      final w0 = await api.wledAccess();
+      expect(w0.compiled, isTrue);
+      expect(w0.mode, 'off');
+
+      expect((await api.setWledMode('readonly')).mode, 'readonly');
+
+      // Kimlik doğrulamasız kontrolü açmak: BOOT penceresi kapalıyken reddedilir
+      await expectLater(
+        api.setWledMode('control'),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 'pairing_closed')),
+      );
+      expect(esp.wledMode, 'readonly', reason: 'reddedilince mod değişmemeli');
+
+      esp.pairingOpen = true; // kullanıcı BOOT'a bastı
+      expect((await api.setWledMode('control')).mode, 'control');
+
+      // Geri kapatmak yalnızca token ister
+      esp.pairingOpen = false;
+      expect((await api.setWledMode('off')).mode, 'off');
+    });
+
+    test('token olmadan WLED modu okunamaz/değiştirilemez; geçersiz mod reddedilir', () async {
+      final esp = FakeEsp32Http()..validToken = 'a' * 64;
+      final anon = DeviceApi(host: 'x', client: esp.client());
+      await expectLater(anon.wledAccess(), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'unauthorized')));
+      await expectLater(anon.setWledMode('control'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'unauthorized')));
+
+      final api = DeviceApi(host: 'x', token: 'a' * 64, client: esp.client());
+      await expectLater(api.setWledMode('god'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_value')));
+    });
+
+    test('WLED derlenmemiş firmware: compiled=false', () async {
+      final esp = FakeEsp32Http()
+        ..validToken = 'a' * 64
+        ..wledCompiled = false;
+      final api = DeviceApi(host: 'x', token: 'a' * 64, client: esp.client());
+      expect((await api.wledAccess()).compiled, isFalse);
+    });
+  });
+
   group('Token deposu', () {
     test('MemoryTokenStore kalıcı değildir; silme çalışır', () async {
       final t = MemoryTokenStore();

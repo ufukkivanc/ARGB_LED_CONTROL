@@ -103,6 +103,61 @@ void main() {
     });
   });
 
+  group('WLED uyumluluk katmanı (firmware sözleşmesi)', skip: available ? false : 'firmware/ bulunamadı', () {
+    final compat = File('../firmware/src/wled/wled_compat.cpp');
+    final map = File('../firmware/src/wled/wled_map.cpp');
+    final config = File('../firmware/include/config.h');
+    final mdns = File('../firmware/src/network/mdns_service.cpp');
+    final ini = File('../firmware/platformio.ini');
+
+    String code(File f) => f.readAsLinesSync().where((l) => !l.trimLeft().startsWith('//')).join(' ');
+
+    test('derleme zamanı anahtarı: varsayılan açık, WLED\'siz ortam var', () {
+      expect(config.readAsStringSync().contains('#define ENABLE_WLED_COMPAT          1'), isTrue);
+      expect(ini.readAsStringSync().contains('esp32dev_nowled'), isTrue);
+      expect(ini.readAsStringSync().contains('-D ENABLE_WLED_COMPAT=0'), isTrue);
+    });
+
+    test('varsayılan erişim modu KAPALI; bozuk NVS değeri de KAPALI', () {
+      final src = code(compat);
+      expect(src.contains('uint8_t m = 0;'), isTrue);
+      expect(src.contains('(m <= 2) ? m : 0'), isTrue);
+    });
+
+    test('tehlikeli uç noktalar sunulmaz (OTA, ayarlar, dosya, reboot)', () {
+      final src = code(compat);
+      for (final bad in ['"/update"', '"/settings', '"/edit"', '"/cfg', '"/upload"', '"/reset"']) {
+        expect(src.contains(bad), isFalse, reason: bad);
+      }
+      final m = code(map);
+      for (final k in ['"rb"', '"ota"', '"psave"', '"pdel"', '"cfg"']) {
+        expect(m.contains(k), isTrue, reason: '$k yok sayılan anahtarlar listesinde olmalı');
+      }
+    });
+
+    test('yazma yalnızca Control modunda; tarayıcı koruması (Host/Origin/Content-Type) var', () {
+      final src = code(compat);
+      expect(src.contains('write && mode() != WledMode::Control'), isTrue);
+      expect(src.contains('hostAllowed'), isTrue);
+      expect(src.contains('originAllowed'), isTrue);
+      expect(src.contains('content_type_must_be_json'), isTrue);
+      expect(src.contains('allowRate'), isTrue);
+      expect(src.contains('clientForeignOrigin'), isTrue, reason: 'WebSocket (cross-site hijacking) koruması');
+    });
+
+    test('mDNS _wled._tcp yalnızca mod KAPALI değilken yayınlanır', () {
+      final src = code(mdns);
+      expect(src.contains('setWledAdvertised(WledCompat::instance().enabled())'), isTrue);
+      expect(src.contains('mdns_service_remove("_wled", "_tcp")'), isTrue);
+    });
+
+    test('mod değişimi token ister; control için fiziksel onay ister', () {
+      final api = code(File('../firmware/src/api/api_server.cpp'));
+      expect(RegExp(r'_post\("/api/wled", true').hasMatch(api), isTrue, reason: 'token zorunlu');
+      expect(api.contains('m == WledMode::Control') && api.contains('isPairingOpen() || SerialProvisioning::instance().isOpen()'), isTrue);
+    });
+  });
+
   group('Flutter efekt kataloğu', () {
     test('20 efektin hepsi listede ve yetenek tablosunda var', () {
       final listed = Effect.builtInEffects.map((e) => e.type).toSet();

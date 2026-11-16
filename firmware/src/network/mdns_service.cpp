@@ -1,6 +1,10 @@
 #include "mdns_service.h"
 #include <WiFi.h>
 #include "device_id.h"
+#include <mdns.h>
+#if ENABLE_WLED_COMPAT
+#include "wled/wled_compat.h"
+#endif
 
 MdnsService& MdnsService::instance() {
     static MdnsService service;
@@ -32,7 +36,33 @@ bool MdnsService::begin(const String& hostname) {
     MDNS.addServiceTxt("ws", "tcp", "endpoint", WS_ENDPOINT);
 
     _initialized = true;
+#if ENABLE_WLED_COMPAT
+    // WLED uygulaması _wled._tcp servisini tarar; yalnızca erişim modu KAPALI değilse yayınlanır.
+    _wled = false;
+    setWledAdvertised(WledCompat::instance().enabled());
+#endif
     return true;
+}
+
+void MdnsService::setWledAdvertised(bool on) {
+#if ENABLE_WLED_COMPAT
+    if (!_initialized) { _wled = on; return; }
+    if (on == _wled) return;
+    _wled = on;
+    if (on) {
+        String mac = WiFi.macAddress();
+        mac.replace(":", "");
+        mac.toLowerCase();
+        MDNS.addService("wled", "tcp", HTTP_PORT);
+        MDNS.addServiceTxt("wled", "tcp", "mac", mac);   // WLED uygulaması cihaz kimliği için kullanır
+        Serial.println("[mDNS] _wled._tcp advertised (WLED compatibility ON).");
+    } else {
+        mdns_service_remove("_wled", "_tcp");
+        Serial.println("[mDNS] _wled._tcp removed (WLED compatibility OFF).");
+    }
+#else
+    (void)on;
+#endif
 }
 
 void MdnsService::setPaired(bool paired) {

@@ -23,6 +23,8 @@ class FakeEsp32Http {
   int connectPolls = 0;
   int connectPollsUntilDone = 2;
   bool connectShouldFail = false;
+  String wledMode = 'off';
+  bool wledCompiled = true;
   int scanPollsRunning = 1;
   int _scanPolls = 0;
   final List<String> requests = [];
@@ -123,6 +125,16 @@ class FakeEsp32Http {
           if (wifiState == 'connected') ...{'ssid': wifiSsid, 'ip': '192.168.1.40', 'rssi': -50},
           if (wifiState == 'failed') 'error': wifiError,
         });
+      case 'GET /api/wled':
+        return _json(200, {'compiled': wledCompiled, 'mode': wledMode});
+      case 'POST /api/wled':
+        final b = jsonDecode(r.body) as Map;
+        final m = b['mode'];
+        if (m != 'off' && m != 'readonly' && m != 'control') return _err(400, 'invalid_value', field: 'mode');
+        // Kimlik doğrulamasız kontrol: fiziksel BOOT onayı (eşleştirme penceresi) şart
+        if (m == 'control' && !pairingOpen) return _err(403, 'pairing_closed');
+        wledMode = m as String;
+        return _json(200, {'compiled': wledCompiled, 'mode': wledMode});
       case 'GET /api/auth/tokens':
         return _json(200, {
           'tokens': [

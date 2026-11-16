@@ -20,6 +20,7 @@ class DeviceSettingsScreen extends ConsumerStatefulWidget {
 
 class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
   List<PairedClient>? _clients;
+  WledAccess? _wled;
   String? _error;
   bool _busy = false;
 
@@ -43,8 +44,15 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
     if (api == null) return;
     try {
       final c = await api.listTokens();
+      WledAccess? wled;
+      try {
+        wled = await api.wledAccess();
+      } on ApiException {
+        wled = null; // eski firmware: WLED uç noktası yok
+      }
       if (mounted) {
         setState(() {
+          _wled = wled;
           _clients = c;
           _error = null;
         });
@@ -155,6 +163,7 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
                     await ref.read(connectionProvider.notifier).disconnect();
                   },
                 ),
+                ..._wledSection(),
                 _section('Eşleştirilmiş istemciler'),
                 if (_clients == null && _error == null) const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator()),
                 for (final c in _clients ?? const <PairedClient>[])
@@ -203,6 +212,62 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// WLED (iPhone/Android) uygulaması uyumluluğu: erişim modu.
+  List<Widget> _wledSection() {
+    final w = _wled;
+    if (w == null) return const [];
+    if (!w.compiled) {
+      return [
+        _section('WLED uyumluluğu'),
+        const ListTile(
+          leading: Icon(Icons.block),
+          title: Text('Bu firmware WLED uyumluluğu olmadan derlenmiş'),
+        ),
+      ];
+    }
+    Widget tile(String mode, String title, String subtitle, {bool warn = false}) {
+      final selected = w.mode == mode;
+      return ListTile(
+        leading: Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: selected ? (warn ? AppColors.warning : AppColors.success) : null),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        onTap: _busy || selected ? null : () => _setWled(mode),
+      );
+    }
+
+    return [
+      _section('WLED uyumluluğu (iPhone WLED uygulaması)'),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Text(
+          'WLED uygulaması token gönderemez. "Salt okunur" ve "Kontrol" modlarında aynı yerel ağdaki HERKES '
+          'kimlik doğrulamadan cihazı okuyabilir (Kontrol: LED\'leri de değiştirebilir). Kullanmıyorsanız KAPALI bırakın.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+      tile('off', 'Kapalı (önerilen)', '/json/* ve _wled._tcp yayını yok'),
+      tile('readonly', 'Salt okunur', 'Uygulama cihazı bulur ve durumu görür; kontrol edemez', warn: true),
+      tile('control', 'Kontrol', 'Açma/kapama, parlaklık, renk, efekt. Açmak için ESP32 BOOT düğmesine 3 sn basın.',
+          warn: true),
+    ];
+  }
+
+  Future<void> _setWled(String mode) async {
+    if (mode == 'control') {
+      final ok = await _confirm(
+        'Kimlik doğrulamasız kontrol açılsın mı?',
+        'Önce ESP32 üzerindeki BOOT düğmesine 3 saniye basılı tutup bırakın (fiziksel onay). '
+            'Açıldığında aynı yerel ağdaki herkes WLED protokolüyle LED\'leri kontrol edebilir.',
+      );
+      if (!ok) return;
+    }
+    await _run((api) async {
+      final r = await api.setWledMode(mode);
+      if (mounted) setState(() => _wled = r);
+    }, ok: 'WLED modu: $mode');
   }
 
   Widget _section(String t) => Padding(
