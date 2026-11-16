@@ -108,7 +108,8 @@ Varsayılan: **kapalı**. Seçenekler:
 
 ## 6. Bilinen sınırlamalar
 
-- **Ayrıntı ekranı:** iOS uygulaması karta dokununca `http://<ip>/` adresini WebView'da açar; bu sürümde orada WLED'in web arayüzü YOK — bu cihazın Wi-Fi kurulum sayfası açılır. Liste kartındaki **aç/kapa ve parlaklık** çalışır; renk/efekt için bu projenin Flutter uygulaması gerekir.
+- **Ayrıntı ekranı:** iOS uygulaması karta dokununca `http://<ip>/` adresini WebView'da açar. Bu adres artık WLED'in web arayüzü değil, bu projenin **gömülü
+  mobil kontrol arayüzüdür** (§8); Wi-Fi kurulum sayfası `/setup` adresinde durur. WLED'in kendi web arayüzünün tüm özellikleri (palet, preset, segment düzenleme, ayarlar sayfası) yoktur.
 - Palet, preset, playlist, gece ışığı, sync (UDP), `/json/live`, `/presets.json`, `/json/palx`, `/json/fxdata` desteklenmez.
 - WLED'in standart efekt numaraları (Blink=1, Colorloop=8 …) ile bizimkiler farklı; yalnızca `/json/eff` adlarına güvenen istemciler doğru çalışır.
 - Info `ver` = `0.14.0` (uyumluluk taklidi); `brand`/`product` bu firmware'i belirtir.
@@ -130,3 +131,37 @@ Varsayılan: **kapalı**. Seçenekler:
 6. Flutter uygulamasıyla aynı anda kullanın (WS çerçeveleri karışmamalı, token'lı kontrol sürmeli).
 7. Tarayıcıdan başka bir siteden `fetch("http://<ip>/json/state",{method:"POST"…})` → 403 (Origin/Content-Type).
 8. `off`'a dönünce uygulama cihazı kaybetmeli (mDNS kaydı kalkar).
+
+## 8. Gömülü LED kontrol arayüzü (`/`)
+
+`http://<ip>/` (iPhone WLED uygulamasının ayrıntı ekranı dahil) → `firmware/src/wled/control_page.h` içindeki tek sayfa (≈ 12 KB HTML+CSS+JS, PROGMEM'den kopyasız sunulur;
+CDN/harici betik/yazı tipi YOK). Wi-Fi kurulum sayfası `/setup` adresinde aynen çalışır (arayüzün altında bağlantı vardır).
+
+| Özellik | Gerçekleme |
+|---|---|
+| Aç/kapat, parlaklık | `{"on":…}`, `{"bri":…}` (tüm seçili kanallar) |
+| Renk çarkı + 12 hazır renk | `seg[].col` — iki renk yuvası (1./2. renk) |
+| 20 efekt | `/json/eff` adlarıyla; `seg[].fx` |
+| Hız, yoğunluk, ters yön | `sx`, `ix`, `rev`; efektin kullanmadığı kontroller soluklaşır (tablo `effect_capabilities.dart` ile aynı, testle doğrulanır) |
+| Kanal seçimi | Etkin kanallar çip olarak listelenir (≥2 etkin kanal varsa); renk/efekt/ayarlar yalnızca seçililere gider (`seg:[{id,…}]`) |
+| Cihaz durumu | Ad, IP, Wi-Fi sinyali (dBm/%), LED/kanal sayısı, çalışma süresi, boş bellek, bağlantı türü (WebSocket canlı / yoklama) |
+
+**Veri akışı:** açılışta `GET /json/eff` + `GET /json/si`, sonra `ws://<host>/ws` (cihaz durum değişince çerçeve yollar; tüm istemciler senkron kalır).
+WS yoksa `POST /json/state` (`v:true`) ve 2,5 sn'lik `GET /json/si` yoklaması devreye girer. Kaydırıcılar en çok 12,5 mesaj/sn gönderir.
+**Hata yönetimi:** WS hata çerçeveleri (`wled_read_only`, `busy`, …), HTTP hataları ve ağ kopması kullanıcıya bildirilir; WS 1→8 sn geri çekilmeyle yeniden bağlanır.
+
+**Erişim kuralları (yeni yazma uç noktası YOK; sayfa yalnızca mevcut `/json/state` ve `/ws` yollarını kullanır):**
+
+| Mod | `GET /` | Kontroller |
+|---|---|---|
+| `off` | Cihaz verisi/kontrol içermeyen sabit bilgi sayfası (+ `/setup` bağlantısı) | – |
+| `readonly` | Arayüz sunulur; `info.access=readonly` → kontroller devre dışı, "Salt okunur" bandı; sunucu yazmayı zaten 403'ler | kapalı |
+| `control` | Tam arayüz | açık (sunucudaki `control` kuralları geçerli) |
+
+`GET /` için de Host denetimi (DNS rebinding), IP başına hız sınırı ve CSP (`connect-src 'self' ws://<host>`, `frame-ancestors 'none'`) uygulanır.
+`/json/info` yanıtına `access` alanı eklendi (WLED uygulaması bilinmeyen alanları yok sayar). `ENABLE_WLED_COMPAT=0` derlemesinde `/` yine kurulum sayfasını sunar.
+
+**Testler:** `python firmware	est_hostrowser_ui_test.py <klasör>` — gerçek sayfa, sahte WLED sunucusuna karşı başsız Chrome'da (iPhone 390×844 görünümü, CDP ile gerçek dokunuş/fare olayları): 42 doğrulama
+(render, 20 efekt, güç/parlaklık/renk/efekt/hız/yoğunluk/yön, kanal seçimi, readonly, off, WS hata çerçevesi, WS yokken HTTP yedeği ve yoklama).
+Sayfanın gönderdiği komutlar kaydedilir ve `run_host_tests.bat --replay commands.jsonl` ile **firmware'in gerçek eşleme koduyla** yeniden oynatılır (15/15 komut tam kabul).
+**iPhone üzerinde (Safari/WLED uygulaması WebView) ve gerçek ESP32'de DOĞRULANMADI.** Özellikle: WKWebView'da `PointerEvent` ile renk çarkı, canvas çizimi, WS CSP davranışı.

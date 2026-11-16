@@ -35,6 +35,7 @@ public:
 
     // core 0 (async) tarafı
     void registerRoutes(AsyncWebServer& server);
+    void serveRoot(AsyncWebServerRequest* r);   // GET /  (mod off: bilgi sayfası, aksi halde kontrol arayüzü)
     void onWsConnect(AsyncWebSocketClient* client);
     bool handleWsPlain(AsyncWebSocketClient* client, const uint8_t* data, size_t len);   // "p" -> "pong"
     bool handleWsMessage(AsyncWebSocketClient* client, JsonObjectConst msg);

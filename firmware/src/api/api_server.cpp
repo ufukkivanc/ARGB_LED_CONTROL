@@ -827,7 +827,11 @@ void ApiServer::_registerRoutes() {
     _post("/api/factory-reset", true,  [this](AsyncWebServerRequest* r, const char* t) { _hFactoryReset(r, t); });
 
     // Telefon kurulum sayfası ve uç noktaları (token YOK; BOOT penceresi + X-Setup-Request şart)
-    _server.on("/", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });
+#if ENABLE_WLED_COMPAT
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) { WledCompat::instance().serveRoot(r); });   // kontrol arayüzü
+#else
+    _server.on("/", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });   // WLED yok: kurulum sayfası
+#endif
     _server.on("/setup", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });
     _get ("/setup/status",  false, [this](AsyncWebServerRequest* r, const char*) { _hSetupStatus(r); });
     _post("/setup/scan",    false, [this](AsyncWebServerRequest* r, const char*) { _hSetupScanStart(r); });
@@ -1139,7 +1143,8 @@ bool ApiServer::_setupGuard(AsyncWebServerRequest* r, bool needWindow) {
 }
 
 void ApiServer::_hSetupPage(AsyncWebServerRequest* r) {
-    AsyncWebServerResponse* resp = r->beginResponse(200, "text/html; charset=utf-8", SETUP_PAGE_HTML);
+    AsyncWebServerResponse* resp = r->beginResponse(200, "text/html; charset=utf-8",
+        reinterpret_cast<const uint8_t*>(SETUP_PAGE_HTML), sizeof(SETUP_PAGE_HTML) - 1);   // kopyasız (PROGMEM)
     resp->addHeader("Cache-Control", "no-store");
     resp->addHeader("X-Frame-Options", "DENY");
     resp->addHeader("Content-Security-Policy",

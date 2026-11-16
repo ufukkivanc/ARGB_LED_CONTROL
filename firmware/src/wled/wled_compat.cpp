@@ -7,6 +7,7 @@
 #include <esp_system.h>
 
 #include "wled_map.h"
+#include "control_page.h"
 #include "api/api_server.h"
 #include "api/command.h"
 #include "api/command_processor.h"
@@ -318,6 +319,34 @@ void WledCompat::handlePost(AsyncWebServerRequest* r) {
     } else {
         sendJson(r, 200, "{\"success\":true}");
     }
+}
+
+// ── Kök sayfa (/) ───────────────────────────────────────────────────────────
+// off      : cihaz verisi içermeyen sabit bilgi sayfası (kontrol arayüzü YETKİSİZE sunulmaz)
+// readonly : arayüz sunulur, kontroller devre dışı (sayfa info.access'i okur; sunucu yazmayı zaten 403'ler)
+// control  : tam arayüz. Yazmalar mevcut /json/state ve /ws yollarından geçer (yeni yazma uç noktası YOK).
+void WledCompat::serveRoot(AsyncWebServerRequest* r) {
+    String host = r->hasHeader("Host") ? r->header("Host") : String("");
+    if (!wled::hostAllowed(host.c_str(), MDNS_HOSTNAME)) {   // DNS rebinding
+        r->send(403, "text/plain", "bad host");
+        return;
+    }
+    if (!allowRate(static_cast<uint32_t>(r->client()->remoteIP()))) {
+        r->send(429, "text/plain", "rate limited");
+        return;
+    }
+    bool on = enabled();
+    const char* page = on ? CONTROL_PAGE_HTML : OFF_PAGE_HTML;
+    size_t len = (on ? sizeof(CONTROL_PAGE_HTML) : sizeof(OFF_PAGE_HTML)) - 1;
+    AsyncWebServerResponse* resp = r->beginResponse(200, "text/html; charset=utf-8",
+                                                    reinterpret_cast<const uint8_t*>(page), len);   // kopyasız (PROGMEM)
+    resp->addHeader("Cache-Control", "no-store");
+    resp->addHeader("X-Frame-Options", "DENY");
+    String csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                 "form-action 'none'; frame-ancestors 'none'; base-uri 'none'";
+    if (on) csp += "; connect-src 'self' ws://" + host;   // host doğrulandı (IPv4 veya esp32-argb.local)
+    resp->addHeader("Content-Security-Policy", csp);
+    r->send(resp);
 }
 
 // ── Rotalar ────────────────────────────────────────────────────────────────

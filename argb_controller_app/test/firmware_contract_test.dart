@@ -158,6 +158,77 @@ void main() {
     });
   });
 
+  group('LED kontrol arayüzü (firmware, /)', skip: available ? false : 'firmware/ bulunamadı', () {
+    final page = File('../firmware/src/wled/control_page.h');
+    final compat = File('../firmware/src/wled/wled_compat.cpp');
+    final api = File('../firmware/src/api/api_server.cpp');
+
+    String code(File f) => f.readAsLinesSync().where((l) => !l.trimLeft().startsWith('//')).join(' ');
+    String control() {
+      final src = page.readAsStringSync();
+      final i = src.indexOf('CONTROL_PAGE_HTML');
+      final j = src.indexOf('OFF_PAGE_HTML');
+      return src.substring(i, j);
+    }
+
+    test('sayfa tamamen gömülü: harici kaynak, CDN, depolama, günlük yok', () {
+      final src = control();
+      expect(src.contains('innerHTML'), isFalse, reason: 'DOM yalnızca textContent ile yazılmalı');
+      expect(src.contains('console.'), isFalse);
+      expect(src.contains('localStorage') || src.contains('sessionStorage'), isFalse);
+      expect(src.contains('eval('), isFalse);
+      expect(src.contains('<script src'), isFalse);
+      expect(src.contains('<link '), isFalse);
+      expect(src.contains('@import'), isFalse);
+      expect(RegExp('https?://').hasMatch(src), isFalse, reason: 'internet/CDN bağımlılığı olmamalı');
+      expect(src.contains('viewport-fit=cover'), isTrue, reason: 'iPhone çentik/güvenli alan');
+    });
+
+    test('sayfa yalnızca mevcut WLED API yollarını kullanır (yeni yazma uç noktası yok)', () {
+      final src = control();
+      final paths = RegExp(r'"(/[a-z/]+)"').allMatches(src).map((m) => m.group(1)!).toSet();
+      expect(paths, {'/json/state', '/json/si', '/json/eff', '/ws', '/setup'});
+    });
+
+    test('yetenek tablosu (CAPS) Flutter effect_capabilities ile birebir aynı', () {
+      final m = RegExp(r'CAPS=\[([0-9,]+)\]').firstMatch(control())!;
+      final caps = m.group(1)!.split(',').map(int.parse).toList();
+      expect(caps.length, 20);
+      for (var i = 0; i < 20; i++) {
+        final c = effectCaps(EffectType.values[i]);
+        final bits = (c.speed ? 1 : 0) | (c.intensity ? 2 : 0) | (c.color ? 4 : 0) | (c.color2 ? 8 : 0);
+        expect(caps[i], bits, reason: EffectType.values[i].name);
+      }
+    });
+
+    test('/ yönlendirmesi: WLED açık derlemede kontrol arayüzü, /setup korunur', () {
+      final a = code(api);
+      expect(a.contains('_server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) { WledCompat::instance().serveRoot(r); });'), isTrue);
+      expect(a.contains('_server.on("/setup", HTTP_GET'), isTrue);
+      // WLED derlenmediyse / kurulum sayfasına döner
+      expect(a.contains('_server.on("/", HTTP_GET, [this](AsyncWebServerRequest* r) { _hSetupPage(r); });'), isTrue);
+    });
+
+    test('off modunda kontrol arayüzü sunulmaz; Host doğrulaması ve hız sınırı var', () {
+      final c = code(compat);
+      expect(c.contains('on ? CONTROL_PAGE_HTML : OFF_PAGE_HTML'), isTrue);
+      expect(c.contains('hostAllowed(host.c_str(), MDNS_HOSTNAME)'), isTrue);
+      final root = c.substring(c.indexOf('void WledCompat::serveRoot'));
+      expect(root.contains('allowRate'), isTrue);
+      expect(root.contains('frame-ancestors'), isTrue);
+      // kontrol sayfası WS bağlantısını yalnızca kendi host'una izin veren CSP ile sunar
+      expect(root.contains('connect-src'), isTrue);
+    });
+
+    test('off sayfası cihaz verisi/kontrol içermez', () {
+      final src = page.readAsStringSync();
+      final off = src.substring(src.indexOf('OFF_PAGE_HTML'));
+      expect(off.contains('<script'), isFalse);
+      expect(off.contains('/json'), isFalse);
+      expect(off.contains('/setup'), isTrue);
+    });
+  });
+
   group('Flutter efekt kataloğu', () {
     test('20 efektin hepsi listede ve yetenek tablosunda var', () {
       final listed = Effect.builtInEffects.map((e) => e.type).toSet();
