@@ -6,7 +6,7 @@
 #define MAX_CHANNELS              4
 
 #define CH1_DEFAULT_GPIO          18
-#define CH1_DEFAULT_LED_COUNT     1
+#define CH1_DEFAULT_LED_COUNT     10
 #define CH1_DEFAULT_ENABLED       true
 
 #define CH2_DEFAULT_GPIO          19
