@@ -43,3 +43,13 @@ desktop.ini
 *.tmp
 *.swp
 *.bak
+
+# ── Python / ana bilgisayar test çıktıları ──
+__pycache__/
+*.pyc
+*.obj
+*.ilk
+*.pdb
+*.exe
+firmware/test_host/out/
+ui_test_*/
