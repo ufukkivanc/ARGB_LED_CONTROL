@@ -10,6 +10,7 @@
 #include "api/api_server.h"
 #include "auth/auth_manager.h"
 #include "hw/button_manager.h"
+#include "hw/serial_provisioning.h"
 #include "storage/persistence_scheduler.h"
 
 static uint32_t lastHeartbeat = 0;
@@ -60,6 +61,7 @@ void setup() {
     CommandProcessor::instance().begin();
     ApiServer::instance().begin(NvsStorage::instance().getDeviceName());
     ButtonManager::instance().begin();
+    SerialProvisioning::instance().begin();
 
     Serial.println("[System] All systems initialized. Entering non-blocking loop.");
 }
@@ -78,6 +80,7 @@ void loop() {
     // ── Debounce'lu NVS yazımı, düğme/LED, WebSocket bakımı ────────────────
     PersistenceScheduler::instance().tick(millis());
     ButtonManager::instance().update();
+    SerialProvisioning::instance().update();
     ApiServer::instance().tick();
 
     // ── Periodic System Heartbeat (every 5 seconds) ────────────────────────

@@ -72,5 +72,9 @@
 #define SNAPSHOT_REFRESH_MS         250
 
 #define AP_SHUTDOWN_DELAY_MS        10000
+
+// USB seri port Wi-Fi kurulumu: yalnızca BOOT düğmesiyle açılan kısa pencerede kabul edilir
+#define SERIAL_SETUP_WINDOW_MS      120000
+#define SERIAL_SETUP_MAX_LINE       255
 #define SCAN_TIMEOUT_MS             20000
 #define SCAN_MAX_RESULTS            20

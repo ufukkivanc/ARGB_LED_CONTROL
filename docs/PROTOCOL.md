@@ -592,3 +592,29 @@ Plan:
 - **Komut kuyruğu:** 32 yuva; dolunca `busy` döner ve istemci yalnızca son değeri yeniden gönderir.
 - **NVS:** Durum yazımları 1,5 sn debounce / 10 sn azami bekleme ile birleştirilir; değişmemiş durum yazılmaz.
 - **Güvenlik:** Token + Wi-Fi şifresi loglanmaz; kaba kuvvet kilidi; eşleştirme için fiziksel onay; gövde/mesaj ≤ 1 KB; TLS yok (bkz. §4.8).
+
+## 16. USB Seri Port Wi-Fi Kurulumu (Windows masaüstü)
+
+Flutter Windows uygulaması ("Cihazlar" ▸ "USB ile Wi-Fi kur") ESP32'yi COM portundan (115200 baud) yapılandırır.
+Web/mobilde bu özellik gösterilmez (`SerialBackend.supported == false`).
+
+**Fiziksel yetkilendirme:** BOOT düğmesine 3 sn basılıp bırakılınca 120 sn'lik *seri kurulum penceresi* açılır
+(eşleştirme penceresiyle aynı jestle). `scan` ve `wifi` komutları pencere kapalıyken `window_closed` ile reddedilir.
+Başarılı kurulumda veya süre dolunca pencere kapanır. `hello`/`status` pencereden bağımsızdır (kimlik/durum, gizli bilgi yok).
+
+**Çerçeveleme:** satır tabanlı (`\n`). İstek: tek satır JSON `{"cmd":"hello|status|scan|wifi",...}` (≤ 255 bayt).
+Cihaz yanıtları `ARGB:` önekiyle başlar ve tek `Serial.write` ile gönderilir; önek taşımayan satırlar (boot/log) istemci tarafından yok sayılır,
+bozuk satırlar atlanır — seri monitör logları protokolü bozmaz.
+
+| İstek | Yanıt |
+|---|---|
+| `{"cmd":"hello"}` / `{"cmd":"status"}` | `{"type":"hello\|status","deviceId","fw","window","remainingMs","state","ssid?","ip?","error?"}` |
+| `{"cmd":"scan"}` | `scanStarted` → `{"type":"scanResult","networks":[{ssid,rssi,security,channel}]}` (≤ 20) veya `error` |
+| `{"cmd":"wifi","ssid":"..","pass":".."}` | `wifiAccepted` → `{"type":"event","state":"connecting\|connected\|failed",...}`; `connected` olayı `ssid` + DHCP `ip` içerir |
+
+Hata kodları: `window_closed`, `scan_busy`, `scan_timeout`, `invalid_ssid`, `invalid_password`, `bad_json`, `missing_cmd`, `unknown_cmd`, `line_too_long`.
+
+**Güvenlik/NVS:** SSID/şifre loglanmaz ve yankılanmaz; satır tamponu işlendikten sonra sıfırlanır. Kimlik bilgisi (mevcut `WiFiManager` yoluyla)
+yalnızca bağlantı **başarılı** olunca NVS'e yazılır; sonraki açılışlarda `WiFiManager::begin()` otomatik bağlanır.
+Port DTR/RTS yükseltilmeden açılır (otomatik reset'i önlemek için); yine de kart resetlenirse istemci `hello`'yu boot süresince yeniden dener.
+Kurulum sonrası uygulama cihazı yerel ağ IP'siyle açar; kontrol için eşleştirme (token) gerekir ve BOOT'tan açılan eşleştirme penceresi (120 sn) hâlâ açıksa otomatik tamamlanır.

@@ -1,6 +1,7 @@
 #include "button_manager.h"
 #include "auth/auth_manager.h"
 #include "api/command_processor.h"
+#include "hw/serial_provisioning.h"
 #include "network/wifi_manager.h"
 
 ButtonManager& ButtonManager::instance() {
@@ -48,6 +49,7 @@ void ButtonManager::update() {
             uint32_t heldTotal = now - _pressStart;
             if (heldTotal >= PAIR_BUTTON_HOLD_MS && !_resetFired) {
                 AuthManager::instance().openPairingWindow();
+                SerialProvisioning::instance().openWindow();   // USB seri kurulum penceresi (fiziksel onay)
             }
         }
         _pressStart = 0;
