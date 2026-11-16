@@ -9,6 +9,7 @@ import 'package:argb_controller/state/connection_controller.dart';
 import 'package:argb_controller/state/setup_controller.dart';
 import 'package:argb_controller/state/setup_providers.dart';
 import 'package:argb_controller/theme/app_colors.dart';
+import 'package:argb_controller/widgets/signal_bars.dart';
 
 /// Kurulum / eşleştirme sihirbazı.
 ///
@@ -230,7 +231,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
           if (g.accessPointCount > 1) '${g.accessPointCount} erişim noktası',
           if (!n.isSupported) 'Desteklenmiyor (kurumsal)',
         ].join(' • ')),
-        trailing: _SignalBars(bars: signalBars(n.rssi)),
+        trailing: SignalBars(bars: signalBars(n.rssi)),
         onTap: n.isSupported ? () {
           _ssidCtrl.text = g.ssid;
           _passCtrl.clear();
@@ -473,24 +474,5 @@ class _Busy extends StatelessWidget {
             Expanded(child: Text(label)),
           ],
         ),
-      );
-}
-
-class _SignalBars extends StatelessWidget {
-  const _SignalBars({required this.bars});
-  final int bars;
-  @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 1; i <= 4; i++)
-            Container(
-              width: 4,
-              height: 4.0 + i * 3,
-              margin: const EdgeInsets.only(left: 2),
-              color: i <= bars ? AppColors.secondary : AppColors.surfaceLight,
-            ),
-        ],
       );
 }

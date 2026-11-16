@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:argb_controller/screens/device_settings_screen.dart';
 import 'package:argb_controller/screens/setup_screen.dart';
+import 'package:argb_controller/screens/usb_setup_screen.dart';
 import 'package:argb_controller/services/device_discovery.dart';
 import 'package:argb_controller/state/app_state.dart';
 import 'package:argb_controller/state/connection_controller.dart';
+import 'package:argb_controller/state/usb_setup_controller.dart';
 import 'package:argb_controller/theme/app_colors.dart';
 
 /// Cihaz keşfi, seçimi ve mod (simülasyon / gerçek cihaz) ekranı.
@@ -244,6 +246,16 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                     ),
                   ),
                 const SizedBox(height: 24),
+                if (ref.read(serialBackendProvider).supported) ...[
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const UsbSetupScreen()),
+                    ),
+                    icon: const Icon(Icons.usb),
+                    label: const Text('USB ile Wi-Fi kur (kablolu)'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 OutlinedButton.icon(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const SetupScreen()),

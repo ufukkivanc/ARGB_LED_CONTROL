@@ -618,3 +618,15 @@ Hata kodları: `window_closed`, `scan_busy`, `scan_timeout`, `invalid_ssid`, `in
 yalnızca bağlantı **başarılı** olunca NVS'e yazılır; sonraki açılışlarda `WiFiManager::begin()` otomatik bağlanır.
 Port DTR/RTS yükseltilmeden açılır (otomatik reset'i önlemek için); yine de kart resetlenirse istemci `hello`'yu boot süresince yeniden dener.
 Kurulum sonrası uygulama cihazı yerel ağ IP'siyle açar; kontrol için eşleştirme (token) gerekir ve BOOT'tan açılan eşleştirme penceresi (120 sn) hâlâ açıksa otomatik tamamlanır.
+
+### 16.1 İstemci toleransı ve hata ayıklama (USB seri)
+
+- **Yanıt biçimi:** Flutter istemcisi hem `ARGB:{...}` (önekli) hem öneksiz çıplak `{...}` JSON satırlarını kabul eder; JSON nesnesinde string bir `type` alanı
+  yoksa satır log sayılır ve yok sayılır (bazı firmware sürümleri öneksiz yanıt verir — gerçek kartta gözlendi).
+- **Yeniden başlama toleransı:** Port açılınca kart resetlenebilir (≈ 3–6 sn). `hello` en çok 15 kez (1 sn aralıkla) denenir; boot günlüğü
+  (`rst:0x`, `ets Jul`, "ESP32 Smart ARGB Controller - Firmware") görülürse arayüz "ESP32 yeniden başlıyor, bekleniyor…" gösterir.
+- **BOOT geri sayımı:** Bağlıyken `status` her sn yoklanır; pencere durumu ve kalan süre (120 sn) ekranda ilerleme çubuğuyla görünür; pencere kapanırsa akış
+  "BOOT bekleniyor" adımına döner.
+- **Günlük:** Ekranda "Seri iletişim günlüğü" (kopyalanabilir, 150 satır). Wi-Fi şifresi, SSID, tarama sonucundaki ağ adları ve AP şifre satırı **maskelenir**
+  (`SerialDebugLog.redact`).
+- **Gerçek donanım testi:** `ESP32_COM_PORT=COM3 flutter test test/hardware/real_esp32_test.dart` (varsayılan olarak atlanır).

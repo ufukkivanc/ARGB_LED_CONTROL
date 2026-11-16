@@ -20,6 +20,7 @@ dependencies:
   shared_preferences: ^2.3.2
   nsd: ^4.0.0
   app_settings: ^5.1.1
+  flutter_libserialport: ^0.6.0
 
 dev_dependencies:
   flutter_test:
