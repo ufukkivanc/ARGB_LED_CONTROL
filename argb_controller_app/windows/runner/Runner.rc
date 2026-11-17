@@ -89,13 +89,16 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.argbled" "\0"
-            VALUE "FileDescription", "argb_controller" "\0"
+            // NOT: CompanyName + ProductName, Windows'ta kullanıcı ayarlarının yolunu belirler
+            // (%APPDATA%\<CompanyName>\<ProductName>\ — shared_preferences, flutter_secure_storage).
+            // Ayarların güncellemelerde korunması için bu iki değeri DEĞİŞTİRMEYİN.
+            VALUE "CompanyName", "ARGB LED Control" "\0"
+            VALUE "FileDescription", "ARGB Controller" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "argb_controller" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.argbled. All rights reserved." "\0"
-            VALUE "OriginalFilename", "argb_controller.exe" "\0"
-            VALUE "ProductName", "argb_controller" "\0"
+            VALUE "InternalName", "ARGBController" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 ARGB LED Control contributors" "\0"
+            VALUE "OriginalFilename", "ARGBController.exe" "\0"
+            VALUE "ProductName", "ARGB Controller" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

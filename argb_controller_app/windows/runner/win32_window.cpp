@@ -187,6 +187,19 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_GETMINMAXINFO: {
+      // Pencere yeniden boyutlandırılabilir; istemci alanı en az 420x560 mantıksal px (kompakt düzen sınırı).
+      auto* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
+      UINT dpi = ::GetDpiForWindow(hwnd);
+      if (dpi == 0) dpi = 96;
+      RECT frame = {0, 0, Scale(420, dpi / 96.0), Scale(560, dpi / 96.0)};
+      ::AdjustWindowRectExForDpi(&frame, static_cast<DWORD>(::GetWindowLong(hwnd, GWL_STYLE)), FALSE,
+                                 static_cast<DWORD>(::GetWindowLong(hwnd, GWL_EXSTYLE)), dpi);
+      mmi->ptMinTrackSize.x = frame.right - frame.left;
+      mmi->ptMinTrackSize.y = frame.bottom - frame.top;
+      return 0;
+    }
+
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
       LONG newWidth = newRectSize->right - newRectSize->left;
