@@ -105,6 +105,13 @@ static wled::View viewFromSnapshot(const Snapshot& s) {
         c.speed = st.speed < 1 ? 1 : (st.speed > 100 ? 100 : st.speed);
         c.dir = st.direction < 0 ? -1 : 1;
         c.intensity = st.intensity > 100 ? 100 : st.intensity;
+        c.palN = st.palette.n > wled::kPaletteMax ? wled::kPaletteMax : st.palette.n;
+        for (int k = 0; k < c.palN; k++) {
+            c.pal[k][0] = st.palette.c[k].r; c.pal[k][1] = st.palette.c[k].g; c.pal[k][2] = st.palette.c[k].b;
+        }
+        c.hasPend = s.ch[i].hasPending;
+        c.pendEn = s.ch[i].pending.enabled && s.ch[i].pending.ledCount > 0;
+        c.pendLen = s.ch[i].pending.ledCount;
     }
     return v;
 }
@@ -138,6 +145,7 @@ static void fillInfo(JsonObject o, const Snapshot& s, const wled::View& v) {
     c.rssi = s.wifi.rssi;
     c.freeHeap = s.freeHeap;
     c.uptimeSec = s.uptimeMs / 1000;
+    c.fps = s.fps > 0 ? s.fps : 60;
     c.wsClients = static_cast<int>(ApiServer::instance().wledClientCount());
     c.access = wledModeName(WledCompat::instance().mode());
     wled::writeInfo(o, v, c);
@@ -201,7 +209,38 @@ static bool enqueueChanges(const wled::View& after, const wled::ParseResult& r) 
         if (m & wled::M_SPEED) { cmd.fieldMask |= F_SPEED; cmd.speed = c.speed; }
         if (m & wled::M_DIR)   { cmd.fieldMask |= F_DIRECTION; cmd.direction = c.dir; }
         if (m & wled::M_INT)   { cmd.fieldMask |= F_INTENSITY; cmd.intensity = c.intensity; }
-        if (!CommandProcessor::instance().enqueue(cmd)) return false;
+        if (m & wled::M_PAL) {
+            cmd.fieldMask |= F_PALETTE;
+            cmd.palette = Palette();
+            for (int k = 0; k < c.palN && k < wled::kPaletteMax; k++) {
+                cmd.palette.c[k] = RgbColor(c.pal[k][0], c.pal[k][1], c.pal[k][2]);
+                cmd.palette.n++;
+            }
+        }
+        if (cmd.fieldMask != 0 && !CommandProcessor::instance().enqueue(cmd)) return false;
+
+        if (m & wled::M_LEN) {   // LED sayısı: setChannelConfig ile aynı doğrulama/uygulama yolu (kuyruk -> loop)
+            Command cc{};
+            cc.type = CmdType::SetConfig;
+            cc.clientId = 0;
+            cc.cfgChannel = static_cast<uint8_t>(i + 1);
+            cc.cfgMask = CF_LEDCOUNT;
+            cc.cfgLedCount = c.ledCount;
+            if (!CommandProcessor::instance().enqueue(cc)) return false;
+        }
+    }
+    // Bekleyen yapılandırma varsa ve istemci açıkça istediyse yeniden başlat (başka hiçbir durumda tokensiz yeniden başlatma yok)
+    if (r.reboot) {
+        Snapshot s;
+        SnapshotStore::instance().getState(s);
+        bool pending = false;
+        for (int i = 0; i < MAX_CHANNELS; i++) pending = pending || s.ch[i].hasPending;
+        if (pending) {
+            Command rb{};
+            rb.type = CmdType::Reboot;
+            rb.clientId = 0;
+            if (!CommandProcessor::instance().enqueue(rb)) return false;
+        }
     }
     return true;
 }
@@ -361,9 +400,6 @@ void WledCompat::registerRoutes(AsyncWebServer& server) {
     server.on("/json/si", HTTP_GET, [this](AsyncWebServerRequest* r) {
         if (guard(r, false, false)) sendJson(r, 200, buildSi());
     });
-    server.on("/json", HTTP_GET, [this](AsyncWebServerRequest* r) {
-        if (guard(r, false, false)) sendJson(r, 200, buildFull());
-    });
     server.on("/json/eff", HTTP_GET, [this](AsyncWebServerRequest* r) {
         if (!guard(r, false, false)) return;
         JsonDocument d;
@@ -382,6 +418,12 @@ void WledCompat::registerRoutes(AsyncWebServer& server) {
     });
     server.on("/json/nodes", HTTP_GET, [this](AsyncWebServerRequest* r) {
         if (guard(r, false, false)) sendJson(r, 200, "{\"nodes\":[]}");
+    });
+    // SIRA ÖNEMLİDİR: ESPAsyncWebServer "/json" kaydını "/json/..." önekiyle de eşler ve ilk kayıtlı olan kazanır.
+    // "/json" bu yüzden diğer tüm /json/* GET rotalarından SONRA kaydedilmelidir; aksi halde /json/eff,
+    // /json/pal ve /json/nodes dizi yerine tam /json nesnesini döndürür (iPhone'da "Efekt listesi alınamadı").
+    server.on("/json", HTTP_GET, [this](AsyncWebServerRequest* r) {
+        if (guard(r, false, false)) sendJson(r, 200, buildFull());
     });
 
     // Yazma: /json/state ve /json (gövde = WLED durum nesnesi)
@@ -416,7 +458,7 @@ bool WledCompat::handleWsMessage(AsyncWebSocketClient* client, JsonObjectConst m
         client->text("{\"error\":1,\"message\":\"cross_origin_denied\"}");   // WS CSRF/hijacking koruması
         return true;
     }
-    bool wantsWrite = !msg["on"].isNull() || !msg["bri"].isNull() || !msg["seg"].isNull();
+    bool wantsWrite = !msg["on"].isNull() || !msg["bri"].isNull() || !msg["seg"].isNull() || !msg["argb"].isNull();
     if (wantsWrite && mode() != WledMode::Control) {
         client->text("{\"error\":1,\"message\":\"wled_read_only\"}");
         return true;
@@ -426,7 +468,7 @@ bool WledCompat::handleWsMessage(AsyncWebSocketClient* client, JsonObjectConst m
     SnapshotStore::instance().getState(s);
     wled::View v = viewFromSnapshot(s);
     wled::ParseResult res = wled::parseState(msg, v, esp_random());
-    if (res.any() && !enqueueChanges(v, res)) {
+    if ((res.any() || res.reboot) && !enqueueChanges(v, res)) {
         client->text("{\"error\":3,\"message\":\"busy\"}");
         return true;
     }

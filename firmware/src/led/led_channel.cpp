@@ -1,4 +1,6 @@
 #include "led_channel.h"
+#include "animation_engine.h"
+#include <new>
 
 LedChannel::LedChannel(uint8_t channelId)
     : _leds(nullptr),
@@ -80,6 +82,7 @@ void LedChannel::_allocateLeds() {
         for (uint16_t i = 0; i < _config.ledCount; i++) {
             _leds[i] = CRGB::Black;
         }
+        _bufCount = _config.ledCount;
     }
 }
 
@@ -88,10 +91,16 @@ void LedChannel::_freeLeds() {
         delete[] _leds;
         _leds = nullptr;
     }
+    _bufCount = 0;
 }
 
 void LedChannel::_initFastLedController() {
     if (_leds == nullptr || _config.ledCount == 0) return;
+    _addController(_leds, _config.ledCount);
+}
+
+void LedChannel::_addController(CRGB* buf, uint16_t count) {
+    if (buf == nullptr || count == 0) return;
 
     bool isRgb = (strcasecmp(_config.colorOrder, "RGB") == 0);
 
@@ -99,30 +108,30 @@ void LedChannel::_initFastLedController() {
     switch (_config.channelId) {
         case 1:
             if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, RGB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, RGB>(buf, count);
             } else {
-                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, GRB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, GRB>(buf, count);
             }
             break;
         case 2:
             if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, RGB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, RGB>(buf, count);
             } else {
-                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, GRB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, GRB>(buf, count);
             }
             break;
         case 3:
             if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, RGB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, RGB>(buf, count);
             } else {
-                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, GRB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, GRB>(buf, count);
             }
             break;
         case 4:
             if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, RGB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, RGB>(buf, count);
             } else {
-                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, GRB>(_leds, _config.ledCount);
+                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, GRB>(buf, count);
             }
             break;
         default:
@@ -194,6 +203,64 @@ void LedChannel::setDirection(int8_t direction, bool save) {
 void LedChannel::setIntensity(uint8_t intensity, bool save) {
     _state.intensity = constrain(intensity, 0, 100);
     if (save) NvsStorage::instance().saveChannelState(_config.channelId, _state);
+}
+
+void LedChannel::setPalette(const Palette& palette, bool save) {
+    if (_state.palette != palette) {
+        _state.palette = palette;
+        if (save) NvsStorage::instance().saveChannelState(_config.channelId, _state);
+    }
+}
+
+// LED tamponunu yeniden boyutlandırır. Tek yazar: loop çekirdeği (komut kuyruğu). Hata durumunda hiçbir şey değişmez.
+bool LedChannel::_resizeLeds(uint16_t newCount) {
+    if (_controller == nullptr) return false;
+    if (newCount > MAX_LEDS_PER_CHANNEL) return false;
+    if (newCount == _bufCount) return true;
+
+    // 1) yeni tamponu önce ayır (bellek yetersizse eski şerit olduğu gibi kalır)
+    CRGB* nl = nullptr;
+    if (newCount > 0) {
+        if (ESP.getFreeHeap() < 24000u + static_cast<uint32_t>(newCount) * 3u) return false;
+        nl = new (std::nothrow) CRGB[newCount];
+        if (nl == nullptr) return false;
+        for (uint16_t i = 0; i < newCount; i++) nl[i] = CRGB::Black;
+    }
+
+    // 2) eski şeridi OLDUĞU UZUNLUKTA siyaha çek: küçülürken artık sürülmeyen LED'ler sönük kalsın
+    if (_leds != nullptr && _bufCount > 0) {
+        for (uint16_t i = 0; i < _bufCount; i++) _leds[i] = CRGB::Black;
+        _controller->showLeds(255);
+    }
+
+    // 3) denetleyiciyi yeni tampona bağla, eskiyi serbest bırak
+    if (nl != nullptr) _controller->setLeds(nl, newCount);
+    else               _controller->setLeds(_dummy, 1);
+    CRGB* old = _leds;
+    _leds = nl;
+    _bufCount = newCount;
+    delete[] old;
+
+    AnimationEngine::instance().resetChannel(_config.channelId);   // efekt tamponları yeni uzunluğa göre yeniden kurulur
+    return true;
+}
+
+LedChannel::ApplyResult LedChannel::applyLiveConfig(const ChannelConfig& next) {
+#if LIVE_LED_RESIZE
+    if (_controller == nullptr) return ApplyResult::NeedsReboot;
+    if (strcmp(next.colorOrder, _config.colorOrder) != 0) return ApplyResult::NeedsReboot;
+    uint16_t target = next.enabled ? next.ledCount : 0;
+    if (!_resizeLeds(target)) return ApplyResult::NoMemory;
+    uint8_t keepId = _config.channelId;
+    uint8_t keepPin = _config.gpioPin;
+    _config = next;
+    _config.channelId = keepId;
+    _config.gpioPin = keepPin;
+    return ApplyResult::Applied;
+#else
+    (void)next;
+    return ApplyResult::NeedsReboot;
+#endif
 }
 
 void LedChannel::setConfig(const ChannelConfig& config, bool save) {

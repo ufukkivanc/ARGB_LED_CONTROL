@@ -26,7 +26,8 @@ enum : uint16_t {
     F_BRIGHT    = 1 << 4,
     F_SPEED     = 1 << 5,
     F_DIRECTION = 1 << 6,
-    F_INTENSITY = 1 << 7
+    F_INTENSITY = 1 << 7,
+    F_PALETTE   = 1 << 8
 };
 
 // SetConfig alan maskesi
@@ -54,6 +55,7 @@ struct Command {
     uint8_t    speed;
     int8_t     direction;
     uint8_t    intensity;
+    Palette    palette;     // F_PALETTE: tüm paleti değiştirir (n == 0: temizler)
 
     // SetConfig
     uint8_t    cfgChannel;

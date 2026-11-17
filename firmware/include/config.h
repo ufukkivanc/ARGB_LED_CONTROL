@@ -49,7 +49,10 @@
 // ── Stage 4B: API / Güvenlik / Kalıcılık (bkz. docs/PROTOCOL.md) ────────────
 #define API_PROTO_VERSION           1
 #define MAX_LEDS_PER_CHANNEL        512     // Henüz performans garantisi DEĞİLDİR
-#define MAX_TOTAL_LEDS              1024    // Henüz performans garantisi DEĞİLDİR
+#define MAX_TOTAL_LEDS              1024    // Sert sınır (bkz. docs/PROTOCOL.md §8.5: RAM ~5 B/LED, çıkış 30 µs/LED)
+#define LED_WARN_PER_CHANNEL        300     // üstünde kare hızı düşebilir (tek kanal çıkış süresi > ~9 ms): yalnızca uyarı
+#define LED_WARN_TOTAL              600
+#define LIVE_LED_RESIZE             1       // 1: LED sayısı/kanal etkinleştirme yeniden başlatmadan uygulanır (FastLED setLeds)
 
 #define WS_MAX_MESSAGE_BYTES        1024
 #define WS_MAX_CLIENTS              4

@@ -44,6 +44,13 @@ void writeChannel(JsonObject o, const ChannelSnapshot& c, uint8_t channelId) {
     o["speed"] = c.st.speed;
     o["direction"] = c.st.direction;
     o["intensity"] = c.st.intensity;
+    JsonArray pal = o["palette"].to<JsonArray>();   // [] = palet yok (efektler varsayılan renkleri kullanır)
+    for (uint8_t i = 0; i < c.st.palette.n && i < PALETTE_MAX_COLORS; i++) {
+        JsonObject co = pal.add<JsonObject>();
+        co["r"] = c.st.palette.c[i].r;
+        co["g"] = c.st.palette.c[i].g;
+        co["b"] = c.st.palette.c[i].b;
+    }
     if (c.hasPending) {
         JsonObject p = o["pendingConfig"].to<JsonObject>();
         p["enabled"] = c.pending.enabled;
@@ -103,6 +110,14 @@ String buildInfo(const Snapshot& s, const char* deviceName) {
     doc["maxChannels"] = MAX_CHANNELS;
     doc["maxLedsPerChannel"] = MAX_LEDS_PER_CHANNEL;
     doc["maxTotalLeds"] = MAX_TOTAL_LEDS;
+    doc["warnLedsPerChannel"] = LED_WARN_PER_CHANNEL;   // üstünde kare hızı düşebilir (yalnızca uyarı)
+    doc["warnTotalLeds"] = LED_WARN_TOTAL;
+    doc["maxPaletteColors"] = PALETTE_MAX_COLORS;
+    JsonArray feat = doc["features"].to<JsonArray>();
+    feat.add("palette");
+#if LIVE_LED_RESIZE
+    feat.add("liveLedCount");
+#endif
 
     JsonArray fx = doc["supportedEffects"].to<JsonArray>();
     for (size_t i = 0; i < SUPPORTED_EFFECTS_COUNT; i++) fx.add(SUPPORTED_EFFECTS[i]);
@@ -118,6 +133,10 @@ String buildInfo(const Snapshot& s, const char* deviceName) {
 
     doc["uptimeMs"] = s.uptimeMs;
     doc["freeHeap"] = s.freeHeap;
+    JsonObject perf = doc["perf"].to<JsonObject>();   // kare süresi telemetrisi (salt okunur)
+    perf["fps"] = s.fps;
+    perf["renderUs"] = s.renderUs;
+    perf["showUs"] = s.showUs;
 
     JsonArray cfgs = doc["channelConfigs"].to<JsonArray>();
     for (uint8_t i = 0; i < MAX_CHANNELS; i++) {

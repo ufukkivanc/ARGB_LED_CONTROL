@@ -20,6 +20,11 @@ namespace wled {
 
 constexpr int kMaxSeg = 4;
 constexpr int kEffectCount = 20;
+constexpr int kMaxLedsPerCh = 512;     // config.h MAX_LEDS_PER_CHANNEL ile aynı
+constexpr int kMaxTotalLeds = 1024;    // config.h MAX_TOTAL_LEDS ile aynı
+constexpr int kWarnPerCh = 300;        // config.h LED_WARN_PER_CHANNEL
+constexpr int kWarnTotal = 600;        // config.h LED_WARN_TOTAL
+constexpr int kPaletteMax = 5;
 extern const char* const kEffectNames[kEffectCount];
 
 // Bir fiziksel kanalın WLED'e bakan görünümü
@@ -34,6 +39,11 @@ struct Ch {
     uint8_t speed = 50;      // 1..100
     int8_t dir = 1;          // +1 / -1
     uint8_t intensity = 50;  // 0..100
+    uint8_t palN = 0;        // özel palet renk sayısı (0 = palet yok)
+    uint8_t pal[kPaletteMax][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+    bool hasPend = false;    // yeniden başlatma bekleyen yapılandırma
+    bool pendEn = false;
+    uint16_t pendLen = 0;
 };
 
 struct View {
@@ -49,12 +59,15 @@ enum : uint16_t {
     M_BRI   = 1 << 4,
     M_SPEED = 1 << 5,
     M_DIR   = 1 << 6,
-    M_INT   = 1 << 7
+    M_INT   = 1 << 7,
+    M_PAL   = 1 << 8,   // özel palet (apal / pal:0)
+    M_LEN   = 1 << 9    // LED sayısı (seg.len / argb.leds)
 };
 
 struct ParseResult {
     uint16_t changed[kMaxSeg] = {0, 0, 0, 0};  // kanal başına değişen alanlar
     bool verbose = false;                      // "v":true -> tam durum iste
+    bool reboot = false;                       // {"argb":{"reboot":true}}: yalnızca bekleyen yapılandırma varsa uygulanır (glue karar verir)
     int ignored = 0;                           // desteklenmeyip yok sayılan öğe sayısı
     bool any() const {
         for (int i = 0; i < kMaxSeg; i++) if (changed[i]) return true;
@@ -90,6 +103,7 @@ struct InfoCtx {
     int rssi = -60;
     uint32_t freeHeap = 0;
     uint32_t uptimeSec = 0;
+    int fps = 60;                    // ölçülen kare hızı
     int wsClients = 0;
     const char* arch = "esp32";
     const char* brand = "ESP32-ARGB";
@@ -108,5 +122,11 @@ void writePalettes(JsonArray a);
 bool hostAllowed(const char* hostHeader, const char* mdnsHost);
 // Origin varsa "http://<Host>" ile aynı olmalı (başka sitelerden CSRF engeli). Yoksa (yerel uygulama) serbest.
 bool originAllowed(const char* originHeader, const char* hostHeader);
+
+// ── WebSocket kimlik doğrulama zaman aşımı muafiyeti ────────────────────────
+// Token bekleyen (authed=false) bir istemci 5 sn içinde kimlik doğrulamazsa kapatılır. Yalnızca TÜM koşullar
+// sağlanırsa muaf tutulur: WLED erişim politikası açık (off değil), istemci WLED protokolüyle işaretli ve
+// tarayıcı kaynaklı (yabancı Origin/Host) DEĞİL. İşaret tek başına yetki vermez; her tick'te politika yeniden değerlendirilir.
+bool wsAuthTimeoutExempt(bool wledPolicyEnabled, bool wledFlag, bool foreignOrigin, bool authed);
 
 }  // namespace wled

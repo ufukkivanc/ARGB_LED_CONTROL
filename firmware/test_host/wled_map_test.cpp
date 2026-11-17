@@ -295,6 +295,100 @@ static int replay(const char* path) {
     return (bad == 0 && n > 0) ? 0 : 1;
 }
 
+static void testWsExempt() {
+    printf("[ws auth timeout muafiyeti]\n");
+    // (politika açık, wled işareti, yabancı kaynak, authed)
+    CHECK(wled::wsAuthTimeoutExempt(true, true, false, false));      // güvenilir WLED istemcisi: muaf
+    CHECK(!wled::wsAuthTimeoutExempt(false, true, false, false));    // WLED erişimi kapalı (off): muaf DEĞİL
+    CHECK(!wled::wsAuthTimeoutExempt(true, false, false, false));    // WLED işareti yok (token bekleyen): muaf DEĞİL
+    CHECK(!wled::wsAuthTimeoutExempt(true, true, true, false));      // yabancı kaynaklı tarayıcı: muaf DEĞİL
+    CHECK(!wled::wsAuthTimeoutExempt(false, false, false, false));   // Flutter istemcisi, WLED kapalı: zaman aşımı
+    CHECK(!wled::wsAuthTimeoutExempt(false, false, true, false));
+    CHECK(!wled::wsAuthTimeoutExempt(true, true, false, true));      // authed: muafiyet konusu değil
+    // Mod değişimi: aynı istemci politika kapanınca muaf olmaktan çıkar
+    bool before = wled::wsAuthTimeoutExempt(true, true, false, false);
+    bool after = wled::wsAuthTimeoutExempt(false, true, false, false);
+    CHECK(before && !after);
+}
+
+static void testPaletteAndLeds() {
+    printf("[palet + LED sayısı]\n");
+    wled::View v = makeView(2, 10);
+    wled::ParseResult r;
+    // palet ekle (1..5 renk), hex/dizi/nesne biçimleri
+    r = parse("{\"seg\":[{\"id\":0,\"apal\":[[255,0,0],[0,255,0],[0,0,255]]}]}", v);
+    CHECK(v.ch[0].palN == 3 && v.ch[0].pal[1][1] == 255 && (r.changed[0] & wled::M_PAL) && !(r.changed[1] & wled::M_PAL));
+    CHECK(v.ch[1].palN == 0);                                    // kanal başına bağımsız palet
+    // aynı palet tekrar: değişiklik yok
+    r = parse("{\"seg\":[{\"id\":0,\"apal\":[[255,0,0],[0,255,0],[0,0,255]]}]}", v);
+    CHECK(!r.any());
+    // 5 renk, 6 renk (reddedilir), geçersiz renk (tüm istek reddedilir, palet değişmez)
+    r = parse("{\"seg\":[{\"id\":1,\"apal\":[\"ff0000\",\"00ff00\",[0,0,255],[255,255,0],[1,2,3]]}]}", v);
+    CHECK(v.ch[1].palN == 5 && v.ch[1].pal[0][0] == 255);
+    r = parse("{\"seg\":[{\"id\":1,\"apal\":[[1,1,1],[1,1,1],[1,1,1],[1,1,1],[1,1,1],[1,1,1]]}]}", v);
+    CHECK(v.ch[1].palN == 5 && r.ignored >= 1 && !r.any());
+    r = parse("{\"seg\":[{\"id\":1,\"apal\":[[1,1,1],\"zz\"]}]}", v);
+    CHECK(v.ch[1].palN == 5 && r.ignored >= 1 && !r.any());
+    // pal:0 temizler, pal:1 etkin paleti korur, boşken pal:1 / pal:5 yok sayılır
+    r = parse("{\"seg\":[{\"id\":1,\"pal\":1}]}", v);
+    CHECK(v.ch[1].palN == 5 && !r.any() && r.ignored == 0);
+    r = parse("{\"seg\":[{\"id\":1,\"pal\":0}]}", v);
+    CHECK(v.ch[1].palN == 0 && (r.changed[1] & wled::M_PAL));
+    r = parse("{\"seg\":[{\"id\":1,\"pal\":1}]}", v);
+    CHECK(r.ignored == 1 && !r.any());
+    // [] temizler
+    r = parse("{\"seg\":[{\"id\":0,\"apal\":[]}]}", v);
+    CHECK(v.ch[0].palN == 0 && (r.changed[0] & wled::M_PAL));
+    // palet efekt/renk durumunu değiştirmez (animasyon durmaz)
+    int fxBefore = v.ch[0].fx;
+    r = parse("{\"seg\":[{\"id\":0,\"apal\":[[9,9,9]]}]}", v);
+    CHECK(v.ch[0].fx == fxBefore && r.changed[0] == wled::M_PAL);
+
+    // LED sayısı: seg.len, argb.leds (devre dışı kanal dahil), sınırlar
+    v = makeView(1, 10);
+    r = parse("{\"seg\":[{\"id\":0,\"len\":30}]}", v);
+    CHECK(v.ch[0].ledCount == 30 && (r.changed[0] & wled::M_LEN));
+    r = parse("{\"argb\":{\"leds\":[{\"id\":1,\"n\":30},{\"id\":2,\"n\":30},{\"id\":3,\"n\":30}]}}", v);
+    CHECK(v.ch[1].enabled && v.ch[1].ledCount == 30 && v.ch[3].ledCount == 30 && r.ignored == 0);
+    CHECK(wled::totalLeds(v) == 120);
+    r = parse("{\"argb\":{\"leds\":[{\"id\":0,\"n\":513}]}}", v);                   // kanal sınırı
+    CHECK(v.ch[0].ledCount == 30 && r.ignored == 1);
+    parse("{\"argb\":{\"leds\":[{\"id\":2,\"n\":0},{\"id\":3,\"n\":0}]}}", v);
+    r = parse("{\"argb\":{\"leds\":[{\"id\":0,\"n\":512},{\"id\":1,\"n\":512}]}}", v);   // toplam 1024 sınırında
+    CHECK(v.ch[0].ledCount == 512 && v.ch[1].ledCount == 512);
+    r = parse("{\"argb\":{\"leds\":[{\"id\":2,\"n\":1}]}}", v);                      // 1024'ü aşar
+    CHECK(v.ch[2].ledCount == 0 && !v.ch[2].enabled && r.ignored == 1);
+    r = parse("{\"argb\":{\"leds\":[{\"id\":0,\"n\":-1}]}}", v);
+    CHECK(r.ignored == 1 && v.ch[0].ledCount == 512);
+    r = parse("{\"argb\":{\"leds\":[{\"id\":1,\"n\":0}]}}", v);                      // 0 = kanal kapanır
+    CHECK(!v.ch[1].enabled && v.ch[1].ledCount == 0 && (r.changed[1] & wled::M_LEN));
+    r = parse("{\"argb\":{\"leds\":[{\"id\":7,\"n\":5}]}}", v);                      // olmayan kanal
+    CHECK(r.ignored == 1);
+    r = parse("{\"argb\":{\"reboot\":true}}", v);
+    CHECK(r.reboot && !r.any());
+    r = parse("{\"rb\":true}", v);                                                       // WLED'in rb anahtarı hâlâ yok sayılır
+    CHECK(!r.reboot && r.ignored >= 1);
+
+    // üretim: seg.pal/apal/col, info.argb
+    v = makeView(2, 10);
+    parse("{\"seg\":[{\"id\":0,\"apal\":[[255,0,0],[0,255,0]]}]}", v);
+    v.ch[1].hasPend = true; v.ch[1].pendEn = true; v.ch[1].pendLen = 30;
+    JsonDocument d;
+    wled::writeState(d.to<JsonObject>(), v);
+    JsonObject s0 = d["seg"][0];
+    CHECK(s0["pal"].as<int>() == 1 && s0["apal"].size() == 2 && s0["col"][0][0].as<int>() == 255 && s0["col"][1][1].as<int>() == 255);
+    CHECK(d["seg"][1]["pal"].as<int>() == 0 && d["seg"][1]["apal"].size() == 0);
+    JsonDocument di;
+    wled::InfoCtx ic;
+    wled::writeInfo(di.to<JsonObject>(), v, ic);
+    CHECK(di["argb"]["ch"].size() == 4 && di["argb"]["ch"][1]["pn"].as<int>() == 30 && di["argb"]["reboot"].as<bool>());
+    CHECK(di["argb"]["maxlen"].as<int>() == 512 && di["argb"]["warnlen"].as<int>() == 300);
+    CHECK(di["palcount"].as<int>() == 2);
+    JsonDocument dp;
+    wled::writePalettes(dp.to<JsonArray>());
+    CHECK(dp.size() == 2);
+}
+
 int main(int argc, char** argv) {
     if (argc >= 3 && strcmp(argv[1], "--replay") == 0) return replay(argv[2]);
     testScales();
@@ -306,6 +400,8 @@ int main(int argc, char** argv) {
     testWriteState();
     testWriteInfo();
     testHeaders();
+    testWsExempt();
+    testPaletteAndLeds();
     printf("\nSonuc: %d dogrulama gecti, %d basarisiz\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

@@ -1,4 +1,5 @@
 #include "nvs_storage.h"
+#include "palette_blob.h"
 #include <esp_wifi.h>
 
 NvsStorage& NvsStorage::instance() {
@@ -160,6 +161,18 @@ bool NvsStorage::loadChannelState(uint8_t channelId, ChannelState& state) {
     state.direction = _prefs.getChar(_channelKey(channelId, "dir").c_str(), 1);
     state.intensity = _prefs.getUChar(_channelKey(channelId, "int").c_str(), 50);
 
+    // Palet (v0.3+): [n, r,g,b ...] blob. Eski sürümlerde anahtar yoktur -> palet boş (geriye dönük uyumlu).
+    state.palette = Palette();
+    String kPal = _channelKey(channelId, "pal");
+    if (_prefs.isKey(kPal.c_str())) {
+        uint8_t raw[paletteblob::kMaxBytes] = {0};
+        uint8_t rgb[PALETTE_MAX_COLORS][3];
+        size_t got = _prefs.getBytes(kPal.c_str(), raw, sizeof(raw));
+        uint8_t n = paletteblob::decode(raw, got, rgb);   // bozuk blob -> palet yok
+        state.palette.n = n;
+        for (uint8_t i = 0; i < n; i++) state.palette.c[i] = RgbColor(rgb[i][0], rgb[i][1], rgb[i][2]);
+    }
+
     _prefs.end();
     return true;
 }
@@ -181,6 +194,19 @@ bool NvsStorage::saveChannelState(uint8_t channelId, const ChannelState& state) 
     _prefs.putUChar(_channelKey(channelId, "spd").c_str(), state.speed);
     _prefs.putChar(_channelKey(channelId, "dir").c_str(), state.direction);
     _prefs.putUChar(_channelKey(channelId, "int").c_str(), state.intensity);
+
+    String kPal = _channelKey(channelId, "pal");
+    if (state.palette.n == 0) {
+        if (_prefs.isKey(kPal.c_str())) _prefs.remove(kPal.c_str());
+    } else {
+        uint8_t rgb[PALETTE_MAX_COLORS][3];
+        for (uint8_t i = 0; i < state.palette.n && i < PALETTE_MAX_COLORS; i++) {
+            rgb[i][0] = state.palette.c[i].r; rgb[i][1] = state.palette.c[i].g; rgb[i][2] = state.palette.c[i].b;
+        }
+        uint8_t raw[paletteblob::kMaxBytes];
+        size_t len = paletteblob::encode(state.palette.n, rgb, raw);
+        _prefs.putBytes(kPal.c_str(), raw, len);
+    }
 
     _prefs.end();
     return true;

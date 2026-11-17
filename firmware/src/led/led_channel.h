@@ -37,6 +37,8 @@ public:
     uint8_t getIntensity() const { return _state.intensity; }
 
     CRGB* getLeds() { return _leds; }
+    const Palette& getPalette() const { return _state.palette; }
+    bool hasController() const { return _controller != nullptr; }
 
     // ── Non-blocking State Controllers ─────────────────────────────────────
     // CRITICAL: Updating color or brightness never resets the animation progress!
@@ -48,7 +50,13 @@ public:
     void setSpeed(uint8_t speed, bool save = true);
     void setDirection(int8_t direction, bool save = true);
     void setIntensity(uint8_t intensity, bool save = true);
+    void setPalette(const Palette& palette, bool save = true);   // animasyon fazı/zamanlayıcısı sıfırlanmaz
     void setMaxBrightness(uint8_t maxBrightness, bool save = false) { _config.maxBrightness = maxBrightness; (void)save; }
+
+    // Canlı yapılandırma (yeniden başlatmasız): LED sayısı ve etkinleştirme. Renk sırası değişimi ve denetleyicisi olmayan
+    // kanal için NeedsReboot döner (hiçbir şey değiştirilmez). Eski şerit önce siyah kare ile söndürülür.
+    enum class ApplyResult : uint8_t { Applied, NeedsReboot, NoMemory };
+    ApplyResult applyLiveConfig(const ChannelConfig& next);
 
     void setConfig(const ChannelConfig& config, bool save = true);
     void setState(const ChannelState& state, bool save = true);
@@ -66,11 +74,15 @@ private:
     void _allocateLeds();
     void _freeLeds();
     void _initFastLedController();
+    void _addController(CRGB* buf, uint16_t count);
+    bool _resizeLeds(uint16_t newCount);   // yalnızca loop çekirdeğinden
 
     ChannelConfig _config;
     ChannelState _state;
 
     CRGB* _leds;
+    uint16_t _bufCount = 0;       // _leds tamponunun gerçek uzunluğu (devre dışı/0 LED: 0)
+    CRGB _dummy[1];               // LED'siz (uyku) kanalın denetleyicisi için yer tutucu
     CLEDController* _controller;
 
     float _animProgress;

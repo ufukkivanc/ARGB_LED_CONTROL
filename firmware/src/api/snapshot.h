@@ -29,6 +29,9 @@ struct Snapshot {
     WifiSnapshot    wifi;
     uint32_t        uptimeMs;
     uint32_t        freeHeap;
+    uint16_t        fps;          // ölçülen LED kare hızı
+    uint32_t        renderUs;     // ortalama efekt hesabı süresi / kare
+    uint32_t        showUs;       // ortalama LED çıkış süresi / kare
 };
 
 struct ScanNetwork {

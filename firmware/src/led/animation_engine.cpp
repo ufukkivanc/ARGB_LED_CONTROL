@@ -52,6 +52,17 @@ uint8_t* AnimationEngine::_buffer(FxState& fx, uint16_t bytes) {
 //  Ana güncelleme
 // ════════════════════════════════════════════════════════════════════════════
 
+void AnimationEngine::resetChannel(uint8_t channelId) {
+    uint8_t idx = channelId - 1;
+    if (idx >= MAX_CHANNELS) return;
+    FxState& fx = _fx[idx];
+    free(fx.buf);
+    fx.buf = nullptr;
+    fx.bufLen = 0;
+    fx.lastEffect = static_cast<EffectType>(255);   // bir sonraki karede durum yeniden kurulur
+    palfx::resetState(fx.pst);
+}
+
 void AnimationEngine::updateChannel(LedChannel& channel, uint32_t now) {
     if (!channel.isEnabled() || channel.getLedCount() == 0 || channel.getLeds() == nullptr) {
         return;
@@ -67,6 +78,10 @@ void AnimationEngine::updateChannel(LedChannel& channel, uint32_t now) {
         return;
     }
 
+    uint8_t idx = channel.getId() - 1;
+    if (idx >= MAX_CHANNELS) idx = 0;
+    FxState& fx = _fx[idx];
+
     // ── Bloklamayan faz hesabı ─────────────────────────────────────────────
     uint32_t dt = now - channel.getLastTick();
     channel.setLastTick(now);
@@ -77,10 +92,10 @@ void AnimationEngine::updateChannel(LedChannel& channel, uint32_t now) {
         float step = static_cast<float>(dt) / static_cast<float>(periodMs);
         if (channel.getDirection() < 0) {
             progress -= step;
-            if (progress < 0.0f) progress += 1.0f;
+            if (progress < 0.0f) { progress += 1.0f; fx.cycle++; }
         } else {
             progress += step;
-            if (progress >= 1.0f) progress -= 1.0f;
+            if (progress >= 1.0f) { progress -= 1.0f; fx.cycle++; }
         }
         channel.setAnimProgress(progress);
     } else if (dt >= 1000) {
@@ -98,9 +113,6 @@ void AnimationEngine::updateChannel(LedChannel& channel, uint32_t now) {
     a.dt = dt;
     a.periodMs = periodMs;
 
-    uint8_t idx = channel.getId() - 1;
-    if (idx >= MAX_CHANNELS) idx = 0;
-    FxState& fx = _fx[idx];
     EffectType effect = channel.getEffect();
 
     // Efekt değişince durumlu efektlerin tamponunu temizle
@@ -113,7 +125,24 @@ void AnimationEngine::updateChannel(LedChannel& channel, uint32_t now) {
         fx.from = a.c1;
         fx.to = a.c1;
         fx.warned = false;
+        palfx::resetState(fx.pst);
     }
+
+    // ── Palet doluysa: efekt yalnızca palet renklerini kullanır (palette_fx.cpp). Boşsa orijinal çizim. ─────────
+    const Palette& pal = channel.getState().palette;
+    if (pal.n > 0) {
+        static palfx::Rgb scratch[MAX_LEDS_PER_CHANNEL];
+        uint16_t cnt = count > MAX_LEDS_PER_CHANNEL ? MAX_LEDS_PER_CHANNEL : count;
+        palfx::Pal pp;
+        pp.n = pal.n > palfx::kMaxColors ? palfx::kMaxColors : pal.n;
+        for (uint8_t i = 0; i < pp.n; i++) pp.c[i] = palfx::Rgb{pal.c[i].r, pal.c[i].g, pal.c[i].b};
+        palfx::In in{scratch, cnt, &pp, static_cast<uint8_t>(effect), progress, fx.cycle, a.intensity, dt, periodMs};
+        palfx::render(in, fx.pst);
+        for (uint16_t i = 0; i < cnt; i++) leds[i] = CRGB(scratch[i].r, scratch[i].g, scratch[i].b);
+        for (uint16_t i = cnt; i < count; i++) leds[i] = CRGB::Black;
+        return;
+    }
+    if (fx.pst.buf) palfx::resetState(fx.pst);   // palet kaldırıldı: tamponu geri ver
 
     switch (effect) {
         case EffectType::staticColor:       _renderStatic(a); break;

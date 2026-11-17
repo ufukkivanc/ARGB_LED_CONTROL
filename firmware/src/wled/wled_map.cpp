@@ -128,6 +128,20 @@ static int parseOn(JsonVariantConst on, bool currentOn) {
     return -1;
 }
 
+// Kanalın LED sayısını ayarlar (0 = kanal kapalı, >0 = açık). Sınırlar: 0..512/kanal, toplam <= 1024. Aşım: yok sayılır.
+static void setLeds(View& v, ParseResult& r, int id, int n) {
+    if (id < 0 || id >= kMaxSeg || n < 0 || n > kMaxLedsPerCh) { r.ignored++; return; }
+    Ch& c = v.ch[id];
+    bool newEn = n > 0;
+    if (c.ledCount == n && c.enabled == newEn) return;
+    int total = n;
+    for (int j = 0; j < kMaxSeg; j++) if (j != id && v.ch[j].enabled) total += v.ch[j].ledCount;
+    if (total > kMaxTotalLeds) { r.ignored++; return; }
+    c.ledCount = static_cast<uint16_t>(n);
+    c.enabled = newEn;
+    r.changed[id] |= M_LEN;
+}
+
 static void applySegment(JsonObjectConst o, int defaultId, View& v, ParseResult& r, uint32_t rnd) {
     int id = o["id"].is<int>() ? o["id"].as<int>() : defaultId;
     if (id < 0 || id >= kMaxSeg || !v.ch[id].enabled) {
@@ -187,7 +201,35 @@ static void applySegment(JsonObjectConst o, int defaultId, View& v, ParseResult&
         int8_t d = o["rev"].as<bool>() ? -1 : 1;
         if (c.dir != d) { c.dir = d; r.changed[id] |= M_DIR; }
     }
-    if (o["pal"].is<int>() && o["pal"].as<int>() != 0) r.ignored++;   // palet desteği yok
+    // Palet: pal:0 paleti temizler; pal:1 ("Custom Palette") palet doluysa zaten etkindir (boşsa yok sayılır); diğerleri yok sayılır.
+    if (o["pal"].is<int>()) {
+        int pv = o["pal"].as<int>();
+        if (pv == 0) {
+            if (c.palN > 0) { c.palN = 0; r.changed[id] |= M_PAL; }
+        } else if (pv != 1 || c.palN == 0) {
+            r.ignored++;
+        }
+    }
+    // apal: [[r,g,b], ...] (0..5 renk) tüm paleti değiştirir ([] temizler). Geçersiz öğe varsa tüm istek yok sayılır.
+    if (o["apal"].is<JsonArrayConst>()) {
+        JsonArrayConst pa = o["apal"].as<JsonArrayConst>();
+        uint8_t tmp[kPaletteMax][3];
+        bool ok = pa.size() <= static_cast<size_t>(kPaletteMax);
+        int n = 0;
+        for (JsonVariantConst e : pa) {
+            if (!ok) break;
+            if (!parseColorElem(e, tmp[n])) { ok = false; break; }
+            n++;
+        }
+        if (!ok) {
+            r.ignored++;
+        } else if (n != c.palN || memcmp(tmp, c.pal, static_cast<size_t>(n) * 3) != 0) {
+            c.palN = static_cast<uint8_t>(n);
+            memcpy(c.pal, tmp, static_cast<size_t>(n) * 3);
+            r.changed[id] |= M_PAL;
+        }
+    }
+    if (o["len"].is<int>()) setLeds(v, r, id, o["len"].as<int>());
 }
 
 ParseResult parseState(JsonObjectConst obj, View& v, uint32_t rnd) {
@@ -224,6 +266,19 @@ ParseResult parseState(JsonObjectConst obj, View& v, uint32_t rnd) {
         }
     } else if (seg.is<JsonObjectConst>()) {
         applySegment(seg.as<JsonObjectConst>(), 0, v, r, rnd);
+    }
+
+    // Bu firmware'e özgü uzantı (WLED uygulaması yok sayar): {"argb":{"leds":[{"id":0,"n":30},...],"reboot":true}}
+    // leds: devre dışı kanallar dahil her kanalın LED sayısı (0 = kapat). reboot: bekleyen yapılandırmayı uygulamak için yeniden başlat.
+    if (obj["argb"].is<JsonObjectConst>()) {
+        JsonObjectConst ar = obj["argb"].as<JsonObjectConst>();
+        if (ar["leds"].is<JsonArrayConst>()) {
+            for (JsonVariantConst e : ar["leds"].as<JsonArrayConst>()) {
+                if (e.is<JsonObjectConst>() && e["id"].is<int>() && e["n"].is<int>()) setLeds(v, r, e["id"].as<int>(), e["n"].as<int>());
+                else r.ignored++;
+            }
+        }
+        if (ar["reboot"].is<bool>() && ar["reboot"].as<bool>()) r.reboot = true;
     }
 
     // Bilerek desteklenmeyen/tehlikeli anahtarlar: yok sayılır (yeniden başlatma, OTA, ön ayar yazma vb.)
@@ -279,17 +334,27 @@ void writeState(JsonObject o, const View& v) {
         char nm[12];
         snprintf(nm, sizeof(nm), "CH%d", i + 1);
         s["n"] = nm;
+        // Palet doluysa WLED "col" yuvaları paletin ilk 3 rengini gösterir (efektler yalnızca paleti kullanır).
+        const uint8_t* c0 = c.palN > 0 ? c.pal[0] : c.c1;
+        const uint8_t* c1 = c.palN > 1 ? c.pal[1] : (c.palN == 1 ? c.pal[0] : c.c2);
+        static const uint8_t kZero[3] = {0, 0, 0};
+        const uint8_t* c2 = c.palN > 2 ? c.pal[2] : kZero;
         JsonArray col = s["col"].to<JsonArray>();
         JsonArray a = col.add<JsonArray>();
-        a.add(c.c1[0]); a.add(c.c1[1]); a.add(c.c1[2]);
+        a.add(c0[0]); a.add(c0[1]); a.add(c0[2]);
         JsonArray b = col.add<JsonArray>();
-        b.add(c.c2[0]); b.add(c.c2[1]); b.add(c.c2[2]);
+        b.add(c1[0]); b.add(c1[1]); b.add(c1[2]);
         JsonArray d = col.add<JsonArray>();
-        d.add(0); d.add(0); d.add(0);
+        d.add(c2[0]); d.add(c2[1]); d.add(c2[2]);
         s["fx"] = c.fx;
         s["sx"] = sxFromSpeed(c.speed);
         s["ix"] = ixFromIntensity(c.intensity);
-        s["pal"] = 0;
+        s["pal"] = c.palN > 0 ? 1 : 0;
+        JsonArray ap = s["apal"].to<JsonArray>();   // firmware uzantısı: özel palet [[r,g,b], ...]
+        for (int k = 0; k < c.palN && k < kPaletteMax; k++) {
+            JsonArray e = ap.add<JsonArray>();
+            e.add(c.pal[k][0]); e.add(c.pal[k][1]); e.add(c.pal[k][2]);
+        }
         s["c1"] = 128;
         s["c2"] = 128;
         s["c3"] = 16;
@@ -310,7 +375,7 @@ void writeInfo(JsonObject o, const View& v, const InfoCtx& c) {
     JsonObject leds = o["leds"].to<JsonObject>();
     leds["count"] = totalLeds(v);
     leds["pwr"] = 0;
-    leds["fps"] = 60;
+    leds["fps"] = c.fps;
     leds["maxpwr"] = 0;
     leds["maxseg"] = kMaxSeg;
     leds["lc"] = 1;
@@ -326,7 +391,7 @@ void writeInfo(JsonObject o, const View& v, const InfoCtx& c) {
     o["lip"] = "";
     o["ws"] = c.wsClients;
     o["fxcount"] = kEffectCount;
-    o["palcount"] = 1;
+    o["palcount"] = 2;
     o["cpalcount"] = 0;
     JsonObject fs = o["fs"].to<JsonObject>();
     fs["u"] = 0;
@@ -340,6 +405,28 @@ void writeInfo(JsonObject o, const View& v, const InfoCtx& c) {
     o["opt"] = 0;   // bit0 = 0: OTA KAPALI (uygulama "yazılım güncelle" sunmasın)
     o["brand"] = c.brand;
     o["access"] = c.access;   // WLED uygulaması bilinmeyen anahtarı yok sayar
+
+    // Firmware uzantısı: kanal başına LED sayıları (devre dışı kanallar dahil), sınırlar, bekleyen yapılandırma
+    JsonObject ar = o["argb"].to<JsonObject>();
+    ar["maxlen"] = kMaxLedsPerCh;
+    ar["maxtotal"] = kMaxTotalLeds;
+    ar["warnlen"] = kWarnPerCh;
+    ar["warntotal"] = kWarnTotal;
+    ar["maxpal"] = kPaletteMax;
+    bool rb = false;
+    JsonArray chs = ar["ch"].to<JsonArray>();
+    for (int i = 0; i < kMaxSeg; i++) {
+        JsonObject e = chs.add<JsonObject>();
+        e["id"] = i;
+        e["en"] = v.ch[i].enabled;
+        e["n"] = v.ch[i].ledCount;
+        if (v.ch[i].hasPend) {
+            e["pen"] = v.ch[i].pendEn;
+            e["pn"] = v.ch[i].pendLen;
+            rb = true;
+        }
+    }
+    ar["reboot"] = rb;
     o["product"] = c.product;
     o["mac"] = c.mac;
     o["ip"] = c.ip;
@@ -357,6 +444,7 @@ void writeEffects(JsonArray a) {
 
 void writePalettes(JsonArray a) {
     a.add("Default");
+    a.add("Custom Palette");   // kanal paleti (apal); pal:0 paleti temizler
 }
 
 // ── Başlık doğrulama ───────────────────────────────────────────────────────
@@ -402,6 +490,11 @@ bool originAllowed(const char* originHeader, const char* hostHeader) {
     if (originHeader == nullptr || *originHeader == '\0') return true;   // yerel/native istemci
     if (hostHeader == nullptr) return false;
     return lower(originHeader) == "http://" + lower(hostHeader);
+}
+
+bool wsAuthTimeoutExempt(bool wledPolicyEnabled, bool wledFlag, bool foreignOrigin, bool authed) {
+    if (authed) return false;   // token'lı istemci zaten zaman aşımına tabi değil; muafiyet kavramı yetkisizler içindir
+    return wledPolicyEnabled && wledFlag && !foreignOrigin;
 }
 
 }  // namespace wled

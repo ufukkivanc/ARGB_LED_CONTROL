@@ -16,4 +16,10 @@ cl /nologo /std:c++17 /EHsc /W3 /Fo"%OUT%\\" /Fe"%OUT%\wled_map_test.exe" ^
   "%HERE%wled_map_test.cpp" "%HERE%..\src\wled\wled_map.cpp"
 if errorlevel 1 exit /b 1
 "%OUT%\wled_map_test.exe" %*
+if errorlevel 1 exit /b 1
+rem Palet efekt cizici (saf C++, FastLED gerektirmez)
+cl /nologo /std:c++17 /EHsc /W3 /Fo"%OUT%\\" /Fe"%OUT%\palette_fx_test.exe" ^
+  /I"%HERE%..\src\led" "%HERE%palette_fx_test.cpp" "%HERE%..\src\led\palette_fx.cpp"
+if errorlevel 1 exit /b 1
+"%OUT%\palette_fx_test.exe"
 exit /b %errorlevel%

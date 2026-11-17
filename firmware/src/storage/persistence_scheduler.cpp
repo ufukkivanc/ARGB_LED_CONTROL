@@ -10,7 +10,8 @@ static bool sameState(const ChannelState& a, const ChannelState& b) {
            a.brightness == b.brightness &&
            a.speed == b.speed &&
            a.direction == b.direction &&
-           a.intensity == b.intensity;
+           a.intensity == b.intensity &&
+           a.palette == b.palette;
 }
 
 PersistenceScheduler& PersistenceScheduler::instance() {

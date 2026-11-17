@@ -110,6 +110,23 @@ struct RgbColor {
     }
 };
 
+// ── Çok renkli palet (kanal başına 0..5 renk; 0 = palet yok, efektler varsayılan renk davranışını korur) ──
+constexpr uint8_t PALETTE_MAX_COLORS = 5;
+
+struct Palette {
+    uint8_t n;
+    RgbColor c[PALETTE_MAX_COLORS];
+
+    Palette() : n(0) {}
+
+    bool operator==(const Palette& o) const {
+        if (n != o.n) return false;
+        for (uint8_t i = 0; i < n; i++) if (c[i] != o.c[i]) return false;
+        return true;
+    }
+    bool operator!=(const Palette& o) const { return !(*this == o); }
+};
+
 // ── Channel Configuration ──────────────────────────────────────────────────
 struct ChannelConfig {
     uint8_t channelId;
@@ -143,6 +160,7 @@ struct ChannelState {
     uint8_t speed;
     int8_t direction;
     uint8_t intensity;
+    Palette palette;      // n == 0: palet yok
 
     ChannelState()
         : isOn(true),

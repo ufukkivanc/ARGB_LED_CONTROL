@@ -73,11 +73,22 @@ void ApiServer::tick() {
     // Kimlik doğrulaması zamanında yapılmayan WS istemcilerini kapat
     uint32_t expired[WS_MAX_CLIENTS + 4];
     size_t n = 0;
+    // WLED istemcileri token göndermez: politika açıksa ve istemci güvenilir WLED istemcisiyse muaftır. Politika her
+    // tick'te okunur; mod "off"a alınırsa açık WLED bağlantıları bir sonraki tick'te (süreleri dolduğu için) kapanır.
+    bool wledPolicy = false;
+#if ENABLE_WLED_COMPAT
+    wledPolicy = WledCompat::instance().enabled();
+#endif
     xSemaphoreTake(_clientMutex, portMAX_DELAY);
     for (auto& c : _clients) {
-        if (c.used && !c.authed && (now - c.connectedAt) > WS_AUTH_TIMEOUT_MS && n < (sizeof(expired) / sizeof(expired[0]))) {
-            expired[n++] = c.id;
-        }
+        if (!(c.used && !c.authed && (now - c.connectedAt) > WS_AUTH_TIMEOUT_MS)) continue;
+        bool exempt = false;
+#if ENABLE_WLED_COMPAT
+        exempt = wled::wsAuthTimeoutExempt(wledPolicy, c.wled, c.foreign, c.authed);
+#else
+        (void)wledPolicy;
+#endif
+        if (!exempt && n < (sizeof(expired) / sizeof(expired[0]))) expired[n++] = c.id;
     }
     xSemaphoreGive(_clientMutex);
     for (size_t i = 0; i < n; i++) _ws.close(expired[i], 4401, "auth timeout");
@@ -348,6 +359,9 @@ void ApiServer::_onWsData(AsyncWebSocketClient* client, void* arg, uint8_t* data
     }
     JsonObjectConst msg = doc.as<JsonObjectConst>();
 
+    // Kendi protokolümüzü (string "type") konuşan istemci WLED istemcisi değildir: 5 sn'lik token zaman aşımına tabidir.
+    if (msg["type"].is<const char*>()) setClientWled(client->id(), false);
+
     // İstek kimliği (hata yanıtlarında yansıtılır)
     char reqId[13] = {0};
     if (msg["id"].is<const char*>()) {
@@ -615,6 +629,19 @@ bool ApiServer::_parseCommand(JsonObjectConst msg, uint32_t clientId, bool allow
             }
             cmd.intensity = v.as<int>();
             cmd.fieldMask |= F_INTENSITY;
+        }
+        if (!msg["palette"].isNull()) {
+            if (!msg["palette"].is<JsonArrayConst>()) { err.set(ApiError::InvalidValue, "palette", "[{r,g,b}, ...] (0..5)"); return false; }
+            JsonArrayConst pa = msg["palette"].as<JsonArrayConst>();
+            if (pa.size() > PALETTE_MAX_COLORS) { err.set(ApiError::InvalidValue, "palette", "at most 5 colors"); return false; }
+            Palette parsed;
+            for (JsonVariantConst e : pa) {
+                RgbColor c;
+                if (!_parseColor(e, "palette", c, err)) return false;
+                parsed.c[parsed.n++] = c;
+            }
+            cmd.palette = parsed;
+            cmd.fieldMask |= F_PALETTE;
         }
         if (cmd.fieldMask == 0) {
             err.set(ApiError::MissingField, nullptr, "at least one field required");

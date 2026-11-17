@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "led_channel.h"
+#include "palette_fx.h"
 
 // 20 efektin tamamını render eden, bloklamayan (delay yok) animasyon motoru.
 //
@@ -20,6 +21,9 @@ public:
 
     void updateChannel(LedChannel& channel, uint32_t now);
 
+    // Kanalın efekt durumunu sıfırlar (LED sayısı değişince / kanal yeniden başlatılınca tamponlar yeniden kurulur).
+    void resetChannel(uint8_t channelId);
+
     // Hız -> periyot (ms). Testlerde ve belgede aynı formül.
     static uint32_t periodMsForSpeed(uint8_t speed);
 
@@ -37,6 +41,8 @@ private:
         CRGB       from;
         CRGB       to;
         bool       warned = false;
+        uint32_t   cycle = 0;          // faz her sarıldığında artar (palet efektleri renk sırası için)
+        palfx::State pst;              // palet efektlerinin durumu (palet boşken kullanılmaz)
     };
 
     struct Params {

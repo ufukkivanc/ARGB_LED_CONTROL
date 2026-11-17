@@ -17,7 +17,8 @@ static bool sameState(const ChannelState& a, const ChannelState& b) {
            a.brightness == b.brightness &&
            a.speed == b.speed &&
            a.direction == b.direction &&
-           a.intensity == b.intensity;
+           a.intensity == b.intensity &&
+           a.palette == b.palette;
 }
 
 CommandProcessor& CommandProcessor::instance() {
@@ -160,6 +161,7 @@ void CommandProcessor::_applySet(const Command& cmd) {
         if (cmd.fieldMask & F_SPEED)     ch->setSpeed(cmd.speed, false);
         if (cmd.fieldMask & F_DIRECTION) ch->setDirection(cmd.direction, false);
         if (cmd.fieldMask & F_INTENSITY) ch->setIntensity(cmd.intensity, false);
+        if (cmd.fieldMask & F_PALETTE)   ch->setPalette(cmd.palette, false);
 
         if (!sameState(before, ch->getState())) {
             _changedMask |= (1 << i);
@@ -187,7 +189,11 @@ void CommandProcessor::_applyConfig(const Command& cmd) {
     ChannelConfig next = base;
 
     if (cmd.cfgMask & CF_ENABLED)   next.enabled = cmd.cfgEnabled;
-    if (cmd.cfgMask & CF_LEDCOUNT)  next.ledCount = cmd.cfgLedCount;
+    if (cmd.cfgMask & CF_LEDCOUNT) {
+        next.ledCount = cmd.cfgLedCount;
+        // Yalnızca sayı verildiyse etkinlik sayıdan türetilir (0 = kanal kapalı, >0 = kanal açık)
+        if (!(cmd.cfgMask & CF_ENABLED)) next.enabled = next.ledCount > 0;
+    }
     if (cmd.cfgMask & CF_ORDER) {
         strncpy(next.colorOrder, cmd.cfgColorOrder, sizeof(next.colorOrder) - 1);
         next.colorOrder[sizeof(next.colorOrder) - 1] = '\0';
@@ -227,15 +233,24 @@ void CommandProcessor::_applyConfig(const Command& cmd) {
                    strcmp(next.colorOrder, base.colorOrder) != 0;
 
     if (changed) {
-        // maxBrightness canlı uygulanır; diğerleri yeniden başlatma gerektirir
-        // (FastLED denetleyicileri çalışırken kaldırılamaz, LED tamponu yeniden ayrılamaz).
-        ch->setMaxBrightness(next.maxBrightness);
-
-        bool needsReboot = next.enabled != live.enabled ||
-                           next.ledCount != live.ledCount ||
-                           strcmp(next.colorOrder, live.colorOrder) != 0;
-        _hasPending[idx] = needsReboot;
-        if (needsReboot) _pending[idx] = next;
+        // Önce canlı uygula (LED sayısı / etkinleştirme / maxBrightness; yeniden başlatma gerekmez). Renk sırası
+        // değişimi (veya denetleyicisi olmayan kanal) yeniden başlatma bekler.
+        LedChannel::ApplyResult r = ch->applyLiveConfig(next);
+        if (r == LedChannel::ApplyResult::NoMemory) {
+            err.set(ApiError::Internal, "ledCount", "out of memory");
+            _sendError(cmd, err);
+            return;
+        }
+        if (r == LedChannel::ApplyResult::Applied) {
+            _hasPending[idx] = false;
+        } else {
+            ch->setMaxBrightness(next.maxBrightness);
+            bool needsReboot = next.enabled != live.enabled ||
+                               next.ledCount != live.ledCount ||
+                               strcmp(next.colorOrder, live.colorOrder) != 0;
+            _hasPending[idx] = needsReboot;
+            if (needsReboot) _pending[idx] = next;
+        }
 
         PersistenceScheduler::instance().markConfigDirty(cmd.cfgChannel, next);
         _changedMask |= (1 << idx);
@@ -314,6 +329,12 @@ void CommandProcessor::_refreshSnapshot(bool force) {
 
     s.uptimeMs = now;
     s.freeHeap = ESP.getFreeHeap();
+    {
+        ChannelManager::Perf pf = ChannelManager::instance().perf();
+        s.fps = pf.fps;
+        s.renderUs = pf.renderUs;
+        s.showUs = pf.showUs;
+    }
     SnapshotStore::instance().setState(s);
 }
 

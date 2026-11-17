@@ -61,11 +61,25 @@ void ChannelManager::update() {
     }
     _lastFrameTime = now;
 
-    // Render and refresh all active channels
+    // Render and refresh all active channels (süreler ölçülür: ortalama kare bütçesi ~16.6 ms)
+    uint32_t renderUs = 0, showUs = 0;
     for (auto* ch : _channels) {
         if (ch->isEnabled() && ch->getLedCount() > 0) {
+            uint32_t t0 = micros();
             AnimationEngine::instance().updateChannel(*ch, now);
+            uint32_t t1 = micros();
             ch->show();
+            uint32_t t2 = micros();
+            renderUs += t1 - t0;
+            showUs += t2 - t1;
         }
+    }
+    _perf.renderUs = (_perf.renderUs * 7 + renderUs) / 8;
+    _perf.showUs = (_perf.showUs * 7 + showUs) / 8;
+    _fpsFrames++;
+    if (now - _fpsSince >= 1000) {
+        _perf.fps = static_cast<uint16_t>((static_cast<uint32_t>(_fpsFrames) * 1000u) / (now - _fpsSince));
+        _fpsFrames = 0;
+        _fpsSince = now;
     }
 }
