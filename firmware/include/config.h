@@ -36,7 +36,7 @@
 #define MDNS_HOSTNAME             "esp32-argb"
 #define HTTP_PORT                 80
 #define WS_ENDPOINT               "/ws"
-#define FIRMWARE_VERSION          "1.0.0"
+#define FIRMWARE_VERSION          "0.3.0"
 #define DEVICE_MODEL              "ESP32-WROOM-32"
 
 // ── WLED uyumluluk katmanı (docs/WLED_COMPAT.md) ───────────────────────────
