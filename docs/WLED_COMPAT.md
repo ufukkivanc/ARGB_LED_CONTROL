@@ -165,3 +165,31 @@ WS yoksa `POST /json/state` (`v:true`) ve 2,5 sn'lik `GET /json/si` yoklaması d
 (render, 20 efekt, güç/parlaklık/renk/efekt/hız/yoğunluk/yön, kanal seçimi, readonly, off, WS hata çerçevesi, WS yokken HTTP yedeği ve yoklama).
 Sayfanın gönderdiği komutlar kaydedilir ve `run_host_tests.bat --replay commands.jsonl` ile **firmware'in gerçek eşleme koduyla** yeniden oynatılır (15/15 komut tam kabul).
 **iPhone üzerinde (Safari/WLED uygulaması WebView) ve gerçek ESP32'de DOĞRULANMADI.** Özellikle: WKWebView'da `PointerEvent` ile renk çarkı, canvas çizimi, WS CSP davranışı.
+
+## 9. Palet, LED sayısı ve renk çarkı işaretçisi (v0.3 uzantıları)
+
+WLED uygulaması **bilinmeyen alanları yok sayar**; aşağıdakiler bu firmware'e özgü, WLED uyumluluğunu bozmayan eklemelerdir.
+
+| Yer | Alan | Anlam |
+|---|---|---|
+| `state.seg[]` (okuma/yazma) | `apal` | `[[r,g,b], ...]` 0–5 renk; yazmada tüm paleti değiştirir, `[]` temizler. Geçersiz öğe/6+ renk → istek yok sayılır (`ignored`). |
+| `state.seg[]` | `pal` | Palet varsa `1`, yoksa `0`. Yazmada `0` paleti temizler; `1` etkin paleti korur (boşken yok sayılır); diğer değerler yok sayılır. |
+| `state.seg[].col` | – | Palet etkinken ilk 3 palet rengini gösterir (efektler yalnızca paleti kullanır). |
+| `/json/pal` | – | `["Default","Custom Palette"]`, `info.palcount = 2` |
+| `info.argb` | `ch[]`, `maxlen`, `maxtotal`, `warnlen`, `warntotal`, `maxpal`, `reboot` | Kanal başına `{id,en,n[,pen,pn]}`: devre dışı kanallar dahil LED sayıları, bekleyen yapılandırma |
+| `POST /json/state`, WS | `{"argb":{"leds":[{"id":0,"n":30},...]}}` | Kanal LED sayısı (0 = kapat). `0–512`, toplam ≤ 1024; aşım yok sayılır. Yalnızca `control` modunda (readonly'de 403 / `wled_read_only`). |
+| aynı | `seg[].len` | Etkin kanalın LED sayısı (aynı doğrulama) |
+| aynı | `{"argb":{"reboot":true}}` | **Yalnızca bekleyen yapılandırma varsa** yeniden başlatır (WLED'in `rb` anahtarı hâlâ yok sayılır) |
+| `info.leds.fps` | – | Ölçülen gerçek kare hızı |
+
+**Güvenlik değerlendirmesi:** Bu yazmalar mevcut `control` modunun (tokensiz, BOOT onaylı açılır) yetki sınıfındadır; yeni bir uç nokta eklenmez.
+LED sayısı yazımı kalıcı (NVS) bir yapılandırma değişikliğidir: yanlış/kötü niyetli değer şeridi söndürebilir veya kare hızını düşürebilir ama veri kaybı/yetki yükseltmesi yoktur;
+sınırlar sunucuda zorlanır, yazımlar komut kuyruğundaki ortak doğrulamadan geçer ve NVS yazımı debounce'ludur. Bunu istemeyen kullanıcılar modu `readonly`/`off` bırakır.
+
+**Renk çarkı işaretçisi (`#mk`):** Panelde işaretçi artık yüzde konumlandırılır (düzen/boyut bağımsız), parmağı **anlık** izler (sunucu yanıtı beklenmez), başka istemciden gelen
+çerçevede ve sayfa açılışında son renge göre yeniden konumlanır. (Önceki sürümde sürükleme sırasında 700 ms boyunca güncellenmiyordu.)
+Renk seçimi yalnızca `col` (veya `apal`) gönderir; efekt/animasyon fazı etkilenmez.
+
+**Testler:** `browser_ui_test.py` — palet düzenleme (ekle/sil/sırala/temizle/senkron), işaretçi konumu (açılış, sürükleme, uzaktan değişim), LED sayısı alanları ve sınırları;
+`wled_map_test.cpp` — `apal`/`pal`/`len`/`argb` ayrıştırma ve üretim. Gerçek cihaz: `firmware/test_host/palette_device_test.py`.
+**iPhone'da ve gerçek ESP32'de bu özellikler henüz DOĞRULANMADI.**

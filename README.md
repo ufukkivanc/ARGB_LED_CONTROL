@@ -13,6 +13,8 @@ Docs are mostly Turkish; code identifiers and commit messages are English.
 | Alan | Durum |
 |---|---|
 | **LED kontrolü** | 4 bağımsız kanal (GPIO 18/19/21/22), WS2812B; 20 efekt (hız, yoğunluk, 2 renk, yön); kanal başına durum NVS'te (debounce'lu yazım) |
+| **Çok renkli palet** | Kanal başına 1–5 renkli özel palet (ekle/değiştir/sil/sırala, gerçek renk çarkı); doluysa efektler yalnızca palet renklerini kullanır, boşsa eski davranış. Windows + iPhone paneli, REST/WS/WLED üzerinden senkron, NVS'te kalıcı (`docs/PROTOCOL.md` §3.7) |
+| **Kanal başına LED sayısı** | Her kanal için ayrı sayı (0–512, toplam ≤ 1024), yeniden başlatmadan uygulanır; Windows: Cihaz ayarları, iPhone: Ayarlar kartı. Mevcut kayıtlı sayılar otomatik değiştirilmez |
 | **API** | HTTP + WebSocket (`/ws`), JSON protokolü, **token tabanlı eşleştirme** (fiziksel BOOT düğmesiyle 120 sn'lik pencere), hız sınırlama, komut kuyruğu (core 0 → core 1 tek yazar) |
 | **Wi-Fi kurulumu** | (1) ESP32 SoftAP + telefon tarayıcısında **`/setup`** sayfası, (2) **USB seri** kurulum (Windows Flutter uygulaması), (3) Flutter kurulum sihirbazı (SoftAP → BOOT eşleştirme → ağ seçimi). Hepsi BOOT yetkilendirme penceresine bağlıdır; Wi-Fi şifresi loglanmaz |
 | **Flutter uygulaması** | Cihaz keşfi (mDNS + elle IP), eşleştirme, 4 kanal, renk çarkı, efektler, simülasyon modu; Windows masaüstü, Android, iOS, Web (geliştirme) |
@@ -34,8 +36,22 @@ firmware/                 PlatformIO (Arduino, ESP32-WROOM-32)
   src/wled/               WLED uyumluluk katmanı + gömülü kontrol paneli (ENABLE_WLED_COMPAT)
   test_host/              ESP32 gerektirmeyen testler (C++ eşleme testleri, tarayıcı arayüz testi)
 argb_controller_app/      Flutter uygulaması (lib/, test/, windows/, android/, ios/, web/)
-docs/                     PROTOCOL.md (API sözleşmesi), WLED_COMPAT.md, issues/
+installer/                Inno Setup betiği (Windows kurulum paketi)
+scripts/                  build-windows-installer.ps1, geçici simge üretici
+docs/                     PROTOCOL.md (API sözleşmesi), WLED_COMPAT.md, WINDOWS_DISTRIBUTION.md, PLAN_LED_COUNT.md, issues/
 ```
+
+Sürüm geçmişi: [`CHANGELOG.md`](CHANGELOG.md).
+
+## Hazır firmware (GitHub Releases)
+
+Release'teki `ARGBController-firmware-esp32dev-vX.Y.Z-merged.bin` tek dosyadır ve ESP32'ye **0x0** adresinden yazılır (ESP32-WROOM-32, 4 MB):
+
+```powershell
+python -m esptool --chip esp32 --port COM3 --baud 921600 write_flash 0x0 ARGBController-firmware-esp32dev-vX.Y.Z-merged.bin
+```
+
+`...-app.bin` yalnızca uygulama bölümüdür (0x10000; bootloader/bölüm tablosu zaten yüklüyse). Her dosyanın SHA-256 özeti `SHA256SUMS.txt` içindedir. Kayıtlı Wi-Fi/palet/LED sayısı ayarları (NVS) uygulama bölümü güncellenince korunur; tam silme yapmayın.
 
 ## Derleme ve yükleme
 
@@ -53,6 +69,25 @@ flutter run -d windows        # veya: -d chrome (geliştirme), Android/iOS cihaz
 
 Windows masaüstü derlemesi için Visual Studio "Desktop development with C++" ve Windows'ta Geliştirici Modu (sembolik bağlantı) gerekir.
 Proje yolunda ASCII olmayan karakter (ör. `Ç`) bazı araçlarda (shader derleyicisi, ESP linker harita dosyası) hata verebilir.
+
+## Windows uygulaması: kurulum ve dağıtım
+
+**Kullanıcılar için (Flutter/VS Code/terminal gerekmez):** `ARGBController-Setup-<sürüm>.exe` dosyasını çalıştırın. Yönetici hakkı gerekmez; Başlat menüsü kısayolu oluşturulur,
+masaüstü kısayolu isteğe bağlıdır, *Ayarlar ▸ Uygulamalar* bölümünden kaldırılır. Güncellemek için yeni kurulum dosyasını çalıştırmanız yeterlidir; ayarlarınız ve cihaz eşleştirmeleriniz
+(`%APPDATA%\ARGB LED Control\ARGB Controller\`) korunur. Uygulama ≈ 550×750 boyutunda açılır ve yeniden boyutlandırılabilir.
+
+> Kurulum dosyası **kod imzalı değildir**: Windows SmartScreen "Bilinmeyen yayıncı" uyarısı gösterebilir (*Ek bilgi ▸ Yine de çalıştır*). Ayrıntı ve imzalama yolu: [`docs/WINDOWS_DISTRIBUTION.md`](docs/WINDOWS_DISTRIBUTION.md).
+> Gerekli VC++ çalışma zamanı DLL'leri pakete dahildir (ayrıca kurulum gerekmez).
+
+**Geliştiriciler için — kurulum paketini üretme** (Flutter SDK, Visual Studio "Desktop development with C++" ve Inno Setup 6 gerekir: `winget install JRSoftware.InnoSetup`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1        # analiz + test + release + dist\ARGBController-Setup-<sürüm>.exe
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1 -SkipTests -SkipAnalyze
+```
+
+Sürüm `argb_controller_app/pubspec.yaml` içindeki `version:` değerinden gelir. Proje yolunda `Ç` gibi ASCII olmayan karakter varsa betik otomatik olarak geçici bir sürücü harfi kullanır.
+Uygulama simgesi şu an **geçici bir yer tutucudur** (kalıcı simge: `argb_controller_app/windows/runner/resources/app_icon.ico`).
 
 ## İlk kurulum
 
@@ -83,7 +118,8 @@ Gerçek ESP32'de elle doğrulanması gerekenler `docs/WLED_COMPAT.md` §7'de lis
 
 ## Bilinen sınırlamalar ve hatalar
 
-- **iPhone kontrol panelinde efekt listesi yüklenmiyor** (bilinen hata, sonraki sürümde düzeltilecek) — bkz. [`docs/issues/effect-list-not-loading.md`](docs/issues/effect-list-not-loading.md).
+- iPhone panelinde efekt listesi hatası düzeltildi (`/json/eff` rota sırası) ve WLED WebSocket 5 sn kapanma sorunu giderildi; kullanıcı iPhone'da doğruladı.
+- **LED sayısı** yazılımsal bir ayardır (fiziksel uzunluk otomatik algılanamaz). 300/kanal veya 600 toplam üstünde kare hızı düşebilir; gerçek donanımda FPS ölçümü yapılmadı (`info.perf`).
 - WLED'in kendi web arayüzünün özellikleri (palet, preset, segment düzenleme, ayarlar) yok; efekt numaraları WLED'inkinden farklıdır (`/json/eff` adlarına güvenin).
 - `musicReactive` efekti ses dinlemez (mikrofon yok): BPM'e bağlı simülasyondur.
 - USB seri kurulum yalnızca Windows masaüstünde; kurulum ağına (SoftAP) otomatik bağlanma yok, kullanıcı sistem Wi-Fi ayarlarından bağlanır.

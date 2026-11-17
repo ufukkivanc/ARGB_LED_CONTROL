@@ -1,5 +1,7 @@
 # Issue: Effect list does not load in the iPhone control panel
 
+> **ÇÖZÜLDÜ (v0.3.0).** Kök neden: ESPAsyncWebServer `server.on("/json")` kaydını `/json/...` önekiyle de eşler ve ilk kayıtlı olan kazanır; `/json` rotası `/json/eff`'ten önce kayıtlı olduğundan `/json/eff` dizi yerine tam `/json` nesnesi döndürüyordu. Rota sırası düzeltildi, panel yanıtı doğrulayıp yedek yollarla yeniden deniyor. Aşağıdaki metin özgün taslaktır.
+
 > Draft for a GitHub Issue (the GitHub CLI was not available/authorized in the environment that prepared this file).
 > Suggested labels: `bug`, `firmware`, `ios`, `wled-compat`, `control-panel`.
 

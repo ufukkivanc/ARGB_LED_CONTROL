@@ -175,6 +175,55 @@ Bir kontrol bir efektte etkisizse arayüz o kontrolü gizler/devre dışı bıra
 
 ---
 
+### 3.7 Çok renkli palet ve kanal başına LED sayısı (v0.3 — eklemeli, protokol sürümü 1)
+
+**Palet:** kanal başına 0–5 renk. `0` renk = palet yok: efektler **bugünkü** davranışı korur (orijinal çizim kodu, `animation_engine.cpp`). Palet doluysa efekt
+**yalnızca palet renklerini** kullanır (`palette_fx.cpp`); `color`/`color2` NVS'te korunur ama efektlere girmez, palet temizlenince geri gelir.
+Palet değişimi animasyon fazını/zamanlayıcısını sıfırlamaz (animasyon kesilmez); efekt değişince palet korunur.
+
+| Alan | Tür | Not |
+|---|---|---|
+| `palette` (state ve `set`) | `[{r,g,b}, ...]` | 0–5 öğe. `set` tüm paleti değiştirir; `[]` temizler. 5'ten fazla/geçersiz öğe → `invalid_value` (hiçbir şey uygulanmaz). `state` her kanalda `palette` verir (`[]` = yok). |
+| `info.features` | `["palette","liveLedCount"]` | Eski firmware'de yoktur; istemci özelliği gizler. |
+| `info.maxPaletteColors`, `warnLedsPerChannel`, `warnTotalLeds` | int | 5, 300, 600 |
+| `info.perf` | `{fps,renderUs,showUs}` | Salt okunur kare süresi telemetrisi. |
+
+NVS: kanal başına `pal` anahtarı, `[n, r,g,b,...]` blob'u (`storage/palette_blob.h`). Eski sürümlerde anahtar yoktur → palet boş; bozuk/kısa blob da boş sayılır.
+Yazım mevcut debounce'lu `PersistenceScheduler` üzerinden yapılır (animasyon karesinde NVS yazımı yok).
+
+**Efekt başına palet kullanımı** (P0…P(N-1) = palet; tek renkte (N=1) gradyan tabanlı efektler için eş renk `{P0, %35 koyu P0}` türetilir):
+
+| Efekt | Palet davranışı |
+|---|---|
+| staticColor | N=1 düz renk; N≥2 şerit boyunca P0→…→P(N-1) gradyanı |
+| rainbow | Gökkuşağı yerine paletin dairesel gradyanı şeritte kayar (yoğunluk = renk turu) |
+| rainbowCycle | Tüm şerit paletten sırayla dönen tek renk |
+| breathing / pulsing | Aynı şiddet eğrisi; renk her nefes/atımın en karanlık noktasında bir sonrakine geçer |
+| colorFade | Tüm palet renkleri arasında sırayla yumuşak geçiş |
+| colorWipe | Her adımda sıradaki renk bir öncekinin üstüne silinir (N=1: siyaha karşı) |
+| runningLights | Dalga maskesi aynı; piksel rengi şerit konumundan paletten alınır |
+| theaterChase | Yanan noktalar palet renklerini sırayla alır; boşluk = soluk P1 |
+| fire | Isı haritası siyah→P0→…→P(N-1) |
+| meteorRain, comet | Her geçişte sıradaki palet rengi; kuyruk söner (comet başı beyaza çalar) |
+| twinkle / sparkle | Her yeni yıldız rastgele bir palet rengi; zemin soluk P0 |
+| policeLights | Sol/sağ yarılar paletten dönüşümlü (N=2: klasik iki renk) |
+| wave | Sinüs dalgası tüm palet boyunca örnekler |
+| gradientMove | Dairesel palet gradyanı şerit boyunca kayar |
+| randomTransitions | Rastgele hedef renk yalnızca paletten (N=1: P0 çevresi) |
+| customGradient | Statik palet gradyanı; yoğunluk orta nokta ağırlığını kaydırır |
+| musicReactive | (Ses girişi yok, BPM simülasyonu) VU çubuğu paletle alttan üste boyanır |
+
+**LED sayısı:** `setChannelConfig` `ledCount` (0–512, toplam ≤ 1024) artık **yeniden başlatmadan** uygulanır (`LIVE_LED_RESIZE`, FastLED `CLEDController::setLeds`):
+yeni tampon ayrılır (bellek yetersizse eski şerit olduğu gibi kalır, `internal`/"out of memory"), eski şerit **eski uzunlukta siyah kareyle söndürülür**,
+denetleyici yeni tampona bağlanır, efekt tamponları sıfırlanır. Yalnızca `ledCount` verilirse `enabled = ledCount > 0` türetilir. Renk sırası değişimi
+(veya `LIVE_LED_RESIZE=0`) hâlâ `rebootRequired` döner. LED'siz (uyku) kanallar boot'ta 1 LED'lik yer tutucuya bağlı, asla gösterilmeyen bir denetleyiciyle hazır tutulur.
+**Fiziksel LED sayısı yazılımla algılanamaz**; ayar kullanıcı beyanıdır. Mevcut kayıtlı sayılar güncellemede değiştirilmez.
+
+**Güvenli sınırlar (analiz; ölçüm gerçek donanımda yapılacak):** RAM LED başına ≈3 bayt tampon + en çok 2 bayt efekt tamponu (1024 LED ≈ 5 KB; boş heap ≈ 200 KB) — sınırlayıcı değil.
+Çıkış süresi WS2812B için ≈30 µs/LED: kanallar RMT'de paralelse en uzun kanal belirler (300 LED ≈ 9 ms, 512 LED ≈ 15,4 ms → 60 FPS sınırda), seri ise toplam belirler.
+Sert sınırlar 512/kanal ve 1024 toplam kalır; **300/kanal ve 600 toplam üstünde yalnızca uyarı** gösterilir. `info.perf` ve WLED `info.leds.fps` ölçülen kare hızını verir.
+Güç kaynağı hesabı veya yazılımsal güç yönetimi yoktur (harici besleme kullanılır).
+
 ## 4. Kimlik Doğrulama ve Eşleştirme
 
 ### 4.1 Tehdit modeli
@@ -494,7 +543,7 @@ Mevcut durum: 4 `LedChannel`, her biri kendi `CRGB*` tamponu; FastLED pin şablo
 
 Plan:
 - **Kanal başına bağımsız durum** zaten var; API tüm alanlara `ch` ekler. Kanallar arası ortak olan yalnızca zamanlayıcıdır (60 FPS).
-- **LED sayısı çalışma zamanında değişebilir mi?** FastLED'de eklenen denetleyici kaldırılamaz → `ledCount`/`enabled`/`colorOrder` değişikliği **NVS'e kaydedilir, `rebootRequired:true` döner**, yeniden başlatmada uygulanır. (Güvenli, basit, bellek parçalanması yok.) Alternatif — sıcak yeniden yapılandırma — Stage 6+ sonrası değerlendirilecek.
+- **(Güncellendi, bkz. §3.7)** `ledCount`/`enabled` artık canlı uygulanır (`setLeds`); yalnızca `colorOrder` değişimi `rebootRequired` döner. Eski plan: ~~`ledCount`/`enabled`/`colorOrder` değişikliği NVS'e kaydedilir, yeniden başlatmada uygulanır~~. (Güvenli, basit, bellek parçalanması yok.) Alternatif — sıcak yeniden yapılandırma — Stage 6+ sonrası değerlendirilecek.
 - `setConfig()` bugün bellek ayırmayı/denetleyiciyi yeniden kurmuyor; bu yüzden API yalnızca kaydeder, canlı uygulamaz (`maxBrightness` hariç).
 - Doğrulama: `ledCount ≤ 512`, toplam ≤ 1024, `enabled` ise `ledCount ≥ 1`.
 - **Varsayılan `CH1_DEFAULT_LED_COUNT = 1`** test değeridir; Stage 4B'de uygulama üzerinden ayarlanır (varsayılan değiştirme önerisi: 30) — karar kullanıcıda.
