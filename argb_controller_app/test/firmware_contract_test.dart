@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:argb_controller/models/effect.dart';
 import 'package:argb_controller/models/effect_capabilities.dart';
+import 'package:argb_controller/models/protocol.dart';
 
 /// Flutter <-> firmware sözleşme testleri: firmware kaynağını okuyarak
 /// efekt listesi, hız formülü ve desteklenen efekt bildiriminin uyumunu doğrular.
@@ -187,7 +188,8 @@ void main() {
     test('sayfa yalnızca mevcut WLED API yollarını kullanır (yeni yazma uç noktası yok)', () {
       final src = control();
       final paths = RegExp(r'"(/[a-z/]+)"').allMatches(src).map((m) => m.group(1)!).toSet();
-      expect(paths, {'/json/state', '/json/si', '/json/eff', '/ws', '/setup'});
+      // '/json' yalnızca GET yedeği (efekt listesi /json/eff başarısız olursa); yeni yazma yolu yok
+      expect(paths, {'/json/state', '/json/si', '/json/eff', '/json', '/ws', '/setup'});
     });
 
     test('yetenek tablosu (CAPS) Flutter effect_capabilities ile birebir aynı', () {
@@ -248,6 +250,63 @@ void main() {
           expect(effectCaps(t).speed, isTrue, reason: t.name);
         }
       }
+    });
+  });
+
+  group('palet ve LED sayısı sözleşmesi (firmware <-> Flutter <-> iPhone paneli)', skip: available ? false : 'firmware/ bulunamadı', () {
+    String read(String p) => File(p).readAsStringSync();
+    int constant(String src, String name) => int.parse(RegExp(name + r'\s+(\d+)').firstMatch(src)!.group(1)!);
+
+    test('en fazla palet rengi ve LED sınırları üç tarafta aynı', () {
+      final cfg = read('../firmware/include/config.h');
+      final typesSrc = read('../firmware/include/types.h');
+      final wledMap = read('../firmware/src/wled/wled_map.h');
+      expect(RegExp(r'PALETTE_MAX_COLORS\s*=\s*(\d+)').firstMatch(typesSrc)!.group(1), '$kMaxPaletteColors');
+      expect(RegExp(r'kPaletteMax\s*=\s*(\d+)').firstMatch(wledMap)!.group(1), '$kMaxPaletteColors');
+      final info = DeviceInfo.tryParse({'deviceId': 'x'})!;   // varsayılanlar firmware sabitleriyle aynı olmalı
+      expect(constant(cfg, 'MAX_LEDS_PER_CHANNEL'), info.maxLedsPerChannel);
+      expect(constant(cfg, 'MAX_TOTAL_LEDS'), info.maxTotalLeds);
+      expect(constant(cfg, 'LED_WARN_PER_CHANNEL'), info.warnLedsPerChannel);
+      expect(constant(cfg, 'LED_WARN_TOTAL'), info.warnTotalLeds);
+      expect(RegExp(r'kMaxLedsPerCh\s*=\s*(\d+)').firstMatch(wledMap)!.group(1), '${info.maxLedsPerChannel}');
+      expect(RegExp(r'kMaxTotalLeds\s*=\s*(\d+)').firstMatch(wledMap)!.group(1), '${info.maxTotalLeds}');
+    });
+
+    test('REST/WS: palette alanı state ve set içinde; uzantı bayrakları info içinde', () {
+      final json = read('../firmware/src/api/api_json.cpp');
+      expect(json.contains('o["palette"]'), isTrue);
+      expect(json.contains('feat.add("palette")'), isTrue);
+      final server = read('../firmware/src/api/api_server.cpp');
+      expect(server.contains('msg["palette"]') && server.contains('PALETTE_MAX_COLORS'), isTrue);
+      expect(read('../firmware/src/api/command.h').contains('F_PALETTE'), isTrue);
+      expect(read('../firmware/src/api/command_processor.cpp').contains('ch->setPalette(cmd.palette, false)'), isTrue,
+          reason: 'palet kalıcılığı PersistenceScheduler (debounce) üzerinden: setter save=false');
+    });
+
+    test('NVS: palet ayrı blob anahtarında; eski sürümde anahtar yoksa palet boş', () {
+      final nvs = read('../firmware/src/storage/nvs_storage.cpp');
+      expect(nvs.contains('_channelKey(channelId, "pal")'), isTrue);
+      expect(nvs.contains('state.palette = Palette();'), isTrue, reason: 'anahtar yoksa varsayılan: palet yok');
+    });
+
+    test('WLED/iPhone: sayfa ve eşleme aynı anahtarları kullanır (apal, argb.leds, pal)', () {
+      final page = read('../firmware/src/wled/control_page.h');
+      final map = read('../firmware/src/wled/wled_map.cpp');
+      expect(map.contains('o["apal"]') && map.contains('"apal"'), isTrue);
+      expect(map.contains('obj["argb"]'), isTrue);
+      expect(page.contains('apal') && page.contains('argb:{leds:'), isTrue);
+      // WLED rb anahtarı hâlâ yok sayılır; yeniden başlatma yalnızca argb.reboot + bekleyen yapılandırma ile
+      expect(map.contains('"rb"'), isTrue);
+      expect(read('../firmware/src/wled/wled_compat.cpp').contains('if (pending)'), isTrue);
+    });
+
+    test('mevcut 20 efekt orijinal çizim dalında bozulmadan duruyor; palet ayrı modülde', () {
+      final engine = read('../firmware/src/led/animation_engine.cpp');
+      for (final f in ['_renderStatic(a)', '_renderRainbow(a, progress)', '_renderFire(a, fx)', '_renderMusic(a, fx)']) {
+        expect(engine.contains(f), isTrue, reason: f);
+      }
+      expect(engine.contains('if (pal.n > 0)'), isTrue);
+      expect(File('../firmware/src/led/palette_fx.cpp').existsSync(), isTrue);
     });
   });
 }

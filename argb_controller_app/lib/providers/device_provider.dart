@@ -58,6 +58,10 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
   /// İkincil rengi günceller (colorFade, gradient vb.).
   void setSecondaryColor(LedColor color) => _update(state.copyWith(secondaryColor: color));
 
+  /// Kanal paletini (0..5 renk) değiştirir. Boş liste paleti temizler. Efekt/animasyon fazı etkilenmez.
+  void setPalette(List<LedColor> palette) =>
+      _update(state.copyWith(palette: List.unmodifiable(palette.take(kMaxPaletteColors))));
+
   void setEffect(EffectType effectType) => _update(state.copyWith(effectType: effectType));
 
   /// Parlaklık 0..255.

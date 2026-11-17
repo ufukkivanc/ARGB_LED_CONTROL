@@ -42,7 +42,7 @@ class _ArgbControllerAppState extends ConsumerState<ArgbControllerApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ESP32 Smart ARGB Controller',
+      title: 'ARGB Controller',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const DashboardScreen(),

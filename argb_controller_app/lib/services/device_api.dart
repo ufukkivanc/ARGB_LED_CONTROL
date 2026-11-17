@@ -106,6 +106,15 @@ class DeviceApi {
 
   Future<void> openPairing() => _send('POST', '/api/pair/open');
 
+  /// Kanal yapılandırması (LED sayısı / etkinleştirme). Firmware canlı uygular; renk sırası değişirse yeniden başlatma ister.
+  Future<void> setChannelConfig(int ch, {int? ledCount, bool? enabled}) => _send('POST', '/api/command', body: {
+        'v': 1,
+        'type': 'setChannelConfig',
+        'ch': ch,
+        if (ledCount != null) 'ledCount': ledCount,
+        if (enabled != null) 'enabled': enabled,
+      });
+
   /// WLED uyumluluk erişim modu (token gerekir). "control" için ESP32'de BOOT penceresi açık olmalıdır.
   Future<WledAccess> wledAccess() async {
     final j = await _send('GET', '/api/wled');

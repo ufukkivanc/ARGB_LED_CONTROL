@@ -15,6 +15,9 @@ class DeviceState {
   final int direction;
   final int intensity;
 
+  /// Kanal paleti (0..5 renk). Boşsa efektler kendi varsayılan renk davranışını korur; doluysa yalnızca palet renklerini kullanır.
+  final List<LedColor> palette;
+
   const DeviceState({
     required this.isOn,
     required this.color,
@@ -24,6 +27,7 @@ class DeviceState {
     required this.speed,
     required this.direction,
     required this.intensity,
+    this.palette = const [],
   });
 
   // ── Defaults ────────────────────────────────────────────────────────
@@ -52,6 +56,7 @@ class DeviceState {
     int? speed,
     int? direction,
     int? intensity,
+    List<LedColor>? palette,
   }) {
     return DeviceState(
       isOn: isOn ?? this.isOn,
@@ -62,6 +67,7 @@ class DeviceState {
       speed: speed ?? this.speed,
       direction: direction ?? this.direction,
       intensity: intensity ?? this.intensity,
+      palette: palette ?? this.palette,
     );
   }
 
@@ -77,6 +83,7 @@ class DeviceState {
       'speed': speed,
       'direction': direction,
       'intensity': intensity,
+      'palette': [for (final c in palette) c.toJson()],
     };
   }
 
@@ -106,6 +113,11 @@ class DeviceState {
       speed: (json['speed'] as num?)?.toInt() ?? 50,
       direction: (json['direction'] as num?)?.toInt() ?? 1,
       intensity: (json['intensity'] as num?)?.toInt() ?? 50,
+      palette: [
+        if (json['palette'] is List)
+          for (final e in json['palette'] as List)
+            if (e is Map<String, dynamic>) LedColor.fromJson(e),
+      ],
     );
   }
 
@@ -122,7 +134,16 @@ class DeviceState {
         other.brightness == brightness &&
         other.speed == speed &&
         other.direction == direction &&
-        other.intensity == intensity;
+        other.intensity == intensity &&
+        _samePalette(other.palette, palette);
+  }
+
+  static bool _samePalette(List<LedColor> a, List<LedColor> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -135,6 +156,7 @@ class DeviceState {
         speed,
         direction,
         intensity,
+        Object.hashAll(palette),
       );
 
   @override

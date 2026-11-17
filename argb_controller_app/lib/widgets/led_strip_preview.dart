@@ -245,7 +245,9 @@ class LedStripPreviewState extends State<LedStripPreview>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
+                  Flexible(
+                    child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         width: 8,
@@ -264,16 +266,22 @@ class LedStripPreviewState extends State<LedStripPreview>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'CANLI ŞERİT SİMÜLATÖRÜ',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              letterSpacing: 1.2,
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.bold,
-                            ),
+                      Flexible(
+                        child: Text(
+                          'CANLI ŞERİT SİMÜLATÖRÜ',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                letterSpacing: 1.2,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
                       ),
                     ],
                   ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
@@ -309,15 +317,22 @@ class LedStripPreviewState extends State<LedStripPreview>
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: List.generate(widget.pixelCount, (i) {
-                    final pixelColor = _getPixelColor(i, progress);
-                    final isGlowing = widget.isOn && widget.brightness > 10;
-
-                    return _buildSmd5050Led(pixelColor, isGlowing);
-                  }),
-                ),
+                child: LayoutBuilder(builder: (context, c) {
+                  final isGlowing = widget.isOn && widget.brightness > 10;
+                  final row = Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: List.generate(widget.pixelCount, (i) {
+                      return _buildSmd5050Led(_getPixelColor(i, progress), isGlowing);
+                    }),
+                  );
+                  final needed = widget.pixelCount * 17.0; // LED 14 px + 2x1,5 px kenar boşluğu
+                  if (c.maxWidth >= needed) return row;
+                  // Dar pencerede LED dizisi orantılı küçülür; geniş pencerede yayılım aynı kalır.
+                  return FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SizedBox(width: needed, child: row),
+                  );
+                }),
               ),
               const SizedBox(height: 10),
 
@@ -325,8 +340,11 @@ class LedStripPreviewState extends State<LedStripPreview>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  const Flexible(
+                    child: Text(
                     '+5V  [ ▶ ]  DIN  [ ▶ ]  GND',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 10,
@@ -335,6 +353,8 @@ class LedStripPreviewState extends State<LedStripPreview>
                       letterSpacing: 0.5,
                     ),
                   ),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     '${widget.pixelCount} LED / WS2812B',
                     style: const TextStyle(

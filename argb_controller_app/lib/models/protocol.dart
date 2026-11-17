@@ -64,6 +64,7 @@ class ChannelState {
   final int speed;
   final int direction;
   final int intensity;
+  final List<LedColor> palette;
   final PendingChannelConfig? pending;
 
   const ChannelState({
@@ -78,6 +79,7 @@ class ChannelState {
     required this.speed,
     required this.direction,
     required this.intensity,
+    this.palette = const [],
     this.pending,
   });
 
@@ -110,6 +112,7 @@ class ChannelState {
       speed: ((j['speed'] as num?)?.toInt() ?? 50).clamp(1, 100),
       direction: (j['direction'] as num?)?.toInt() == -1 ? -1 : 1,
       intensity: ((j['intensity'] as num?)?.toInt() ?? 50).clamp(0, 100),
+      palette: paletteFromWire(j['palette']),
       pending: pending,
     );
   }
@@ -123,6 +126,7 @@ class ChannelState {
         speed: speed,
         direction: direction,
         intensity: intensity,
+        palette: palette,
       );
 
   /// Belirli alanları üzerine yazar (anahtar adları protokol alan adlarıdır).
@@ -141,6 +145,7 @@ class ChannelState {
       speed: f.containsKey('speed') ? f['speed'] as int : speed,
       direction: f.containsKey('direction') ? f['direction'] as int : direction,
       intensity: f.containsKey('intensity') ? f['intensity'] as int : intensity,
+      palette: f.containsKey('palette') ? paletteFromWire(f['palette']) : palette,
       pending: pending,
     );
   }
@@ -157,6 +162,7 @@ Map<String, dynamic> deviceStateDiffToFields(DeviceState from, DeviceState to) {
   if (from.speed != to.speed) f['speed'] = to.speed;
   if (from.direction != to.direction) f['direction'] = to.direction >= 0 ? 1 : -1;
   if (from.intensity != to.intensity) f['intensity'] = to.intensity;
+  if (!_samePalette(from.palette, to.palette)) f['palette'] = paletteToWire(to.palette);
   return f;
 }
 
@@ -204,6 +210,7 @@ class ChannelConfigInfo {
   final String colorOrder;
   final int maxBrightness;
   final int gpio;
+  final int? pendingLedCount;   // yeniden başlatma bekleyen LED sayısı
   const ChannelConfigInfo({
     required this.ch,
     required this.enabled,
@@ -211,6 +218,7 @@ class ChannelConfigInfo {
     required this.colorOrder,
     required this.maxBrightness,
     required this.gpio,
+    this.pendingLedCount,
   });
 }
 
@@ -227,6 +235,11 @@ class DeviceInfo {
   final String? ip;
   final int? rssi;
   final int freeHeap;
+  final Set<String> features;
+  final int maxLedsPerChannel;
+  final int maxTotalLeds;
+  final int warnLedsPerChannel;
+  final int warnTotalLeds;
 
   const DeviceInfo({
     required this.deviceId,
@@ -240,7 +253,14 @@ class DeviceInfo {
     this.ip,
     this.rssi,
     this.freeHeap = 0,
+    this.features = const {},
+    this.maxLedsPerChannel = 512,
+    this.maxTotalLeds = 1024,
+    this.warnLedsPerChannel = 300,
+    this.warnTotalLeds = 600,
   });
+
+  bool get supportsPalette => features.contains('palette');
 
   static DeviceInfo? tryParse(dynamic j) {
     if (j is! Map || j['deviceId'] is! String) return null;
@@ -263,6 +283,7 @@ class DeviceInfo {
             colorOrder: (c['colorOrder'] as String?) ?? 'GRB',
             maxBrightness: (c['maxBrightness'] as num?)?.toInt() ?? 255,
             gpio: (c['gpio'] as num?)?.toInt() ?? 0,
+            pendingLedCount: c['pending'] is Map ? ((c['pending'] as Map)['ledCount'] as num?)?.toInt() : null,
           ));
         }
       }
@@ -280,6 +301,15 @@ class DeviceInfo {
       ip: w['ip'] as String?,
       rssi: (w['rssi'] as num?)?.toInt(),
       freeHeap: (j['freeHeap'] as num?)?.toInt() ?? 0,
+      features: {
+        if (j['features'] is List)
+          for (final e in j['features'] as List)
+            if (e is String) e,
+      },
+      maxLedsPerChannel: (j['maxLedsPerChannel'] as num?)?.toInt() ?? 512,
+      maxTotalLeds: (j['maxTotalLeds'] as num?)?.toInt() ?? 1024,
+      warnLedsPerChannel: (j['warnLedsPerChannel'] as num?)?.toInt() ?? 300,
+      warnTotalLeds: (j['warnTotalLeds'] as num?)?.toInt() ?? 600,
     );
   }
 }
@@ -454,6 +484,8 @@ String describeApiError(Object e) {
         return 'Cihaz meşgul, lütfen tekrar deneyin.';
       case 'invalid_value':
         return 'Geçersiz değer${e.field != null ? ' (${e.field})' : ''}.';
+      case 'led_budget_exceeded':
+        return e.message ?? 'Toplam LED sınırı aşıldı.';
       case 'bad_version':
         return 'Uygulama ve cihaz yazılımı protokol sürümleri uyumsuz.';
       default:
@@ -475,4 +507,28 @@ String describeWifiError(String? code) {
     default:
       return 'Bağlantı kurulamadı.';
   }
+}
+
+/// Palet (0..5 renk): tel biçimi `[{r,g,b}, ...]`. Geçersiz öğeler atlanır; en fazla [kMaxPaletteColors] renk.
+const int kMaxPaletteColors = 5;
+
+List<LedColor> paletteFromWire(dynamic v) {
+  if (v is! List) return const [];
+  final out = <LedColor>[];
+  for (final e in v) {
+    final c = colorFromWire(e);
+    if (c != null && out.length < kMaxPaletteColors) out.add(c);
+  }
+  return out;
+}
+
+List<Map<String, int>> paletteToWire(List<LedColor> p) =>
+    [for (final c in p.take(kMaxPaletteColors)) colorToWire(c)];
+
+bool _samePalette(List<LedColor> a, List<LedColor> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].r != b[i].r || a[i].g != b[i].g || a[i].b != b[i].b) return false;
+  }
+  return true;
 }

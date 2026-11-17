@@ -462,6 +462,9 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
     }
   }
 
+  /// /api/info'yu yeniden okur (LED sayısı/özellikler değiştikten sonra).
+  Future<void> refreshInfo() => _fetchInfo(_session);
+
   // ── Temizlik ──────────────────────────────────────────────────────────
 
   void _cleanupTimers() {
@@ -511,4 +514,5 @@ Map<String, dynamic> channelToFields(ChannelState c) => {
       'speed': c.speed,
       'direction': c.direction,
       'intensity': c.intensity,
+      'palette': paletteToWire(c.palette),
     };

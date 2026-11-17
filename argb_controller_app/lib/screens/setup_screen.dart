@@ -414,14 +414,17 @@ class _Card extends StatelessWidget {
   const _Card({required this.children});
   final List<Widget> children;
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
+  Widget build(BuildContext context) => Material(
+        color: AppColors.surface,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
         ),
-        child: Column(children: children),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+        ),
       );
 }
 

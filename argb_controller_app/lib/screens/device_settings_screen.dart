@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:argb_controller/models/protocol.dart';
@@ -7,6 +8,7 @@ import 'package:argb_controller/screens/setup_screen.dart';
 import 'package:argb_controller/services/device_api.dart';
 import 'package:argb_controller/services/device_discovery.dart';
 import 'package:argb_controller/state/app_state.dart';
+import 'package:argb_controller/state/connection_controller.dart';
 import 'package:argb_controller/theme/app_colors.dart';
 
 /// Cihaz ayarları: eşleştirilmiş istemciler, Wi-Fi değiştirme/sıfırlama, eşleştirmeyi kaldırma.
@@ -24,10 +26,22 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
   String? _error;
   bool _busy = false;
 
+  // LED sayısı (kanal başına). Alanlar yalnızca kullanıcı düzenlemediyse cihazdaki değerle eşitlenir.
+  final List<TextEditingController> _ledCtrls = List.generate(kMaxChannels, (_) => TextEditingController());
+  final Set<int> _ledDirty = {};
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ledCtrls) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   Future<DeviceApi?> _api() async {
@@ -163,6 +177,7 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
                     await ref.read(connectionProvider.notifier).disconnect();
                   },
                 ),
+                ..._ledSection(conn),
                 ..._wledSection(),
                 _section('Eşleştirilmiş istemciler'),
                 if (_clients == null && _error == null) const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator()),
@@ -212,6 +227,175 @@ class _DeviceSettingsScreenState extends ConsumerState<DeviceSettingsScreen> {
         ),
       ),
     );
+  }
+
+  // ── LED sayısı (kanal başına) ─────────────────────────────────────────────
+
+  int? _ledValue(int ch) => int.tryParse(_ledCtrls[ch - 1].text.trim());
+
+  /// Girişlerden doğrulama mesajı (null = geçerli) ve toplam.
+  ({String? error, String? warn, int total}) _ledCheck(DeviceInfo? info, DeviceConnection conn) {
+    final maxCh = info?.maxLedsPerChannel ?? 512;
+    final maxTotal = info?.maxTotalLeds ?? 1024;
+    final warnCh = info?.warnLedsPerChannel ?? 300;
+    final warnTotal = info?.warnTotalLeds ?? 600;
+    var total = 0;
+    String? error;
+    String? warn;
+    for (var ch = 1; ch <= kMaxChannels; ch++) {
+      final v = _ledDirty.contains(ch) ? _ledValue(ch) : (conn.channels[ch]?.ledCount ?? 0);
+      if (v == null || v < 0 || v > maxCh) {
+        error ??= 'Kanal $ch: 0–$maxCh arası bir sayı girin.';
+        continue;
+      }
+      total += v;
+      if (v > warnCh) warn = 'Yüksek LED sayısı: kare hızı düşebilir.';
+    }
+    if (error == null && total > maxTotal) error = 'Toplam $total LED, $maxTotal sınırını aşıyor.';
+    if (error == null && total > warnTotal) warn = 'Yüksek toplam LED sayısı: kare hızı düşebilir.';
+    return (error: error, warn: warn, total: total);
+  }
+
+  List<Widget> _ledSection(DeviceConnection conn) {
+    final info = conn.info;
+    if (conn.channels.isEmpty) return const [];
+    for (var ch = 1; ch <= kMaxChannels; ch++) {
+      final cur = conn.channels[ch]?.ledCount ?? 0;
+      final ctrl = _ledCtrls[ch - 1];
+      if (!_ledDirty.contains(ch) && ctrl.text != '$cur') ctrl.text = '$cur';
+    }
+    final check = _ledCheck(info, conn);
+    final canApply = !_busy && _ledDirty.isNotEmpty && check.error == null;
+    final pendingReboot = conn.channels.values.any((c) => c.pending != null);
+
+    return [
+      _section('LED sayısı (kanal başına)'),
+      for (var ch = 1; ch <= kMaxChannels; ch++)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(child: Text('Kanal $ch')),
+              if (conn.channels[ch]?.pending != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text('→ ${conn.channels[ch]!.pending!.ledCount} (yeniden başlatınca)',
+                      style: const TextStyle(fontSize: 11, color: AppColors.warning)),
+                ),
+              SizedBox(
+                width: 96,
+                child: TextField(
+                  key: Key('led_count_$ch'),
+                  controller: _ledCtrls[ch - 1],
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(4)],
+                  decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                  onChanged: (_) => setState(() => _ledDirty.add(ch)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        child: Text(
+          check.error ?? check.warn ?? 'Toplam ${check.total} LED.',
+          style: TextStyle(
+            fontSize: 12,
+            color: check.error != null
+                ? AppColors.error
+                : (check.warn != null ? AppColors.warning : AppColors.textSecondary),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            FilledButton(
+              key: const Key('led_apply'),
+              onPressed: canApply ? _applyLeds : null,
+              child: const Text('Uygula'),
+            ),
+            TextButton(
+              key: const Key('led_fill_30'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                        // Yalnızca alanları doldurur (cihaza HİÇBİR ŞEY gönderilmez); kullanıcı "Uygula"ya basar.
+                        for (var ch = 1; ch <= kMaxChannels; ch++) {
+                          _ledCtrls[ch - 1].text = '30';
+                          _ledDirty.add(ch);
+                        }
+                      }),
+              child: const Text('4 × 1 m (30 LED/m): her kanal 30'),
+            ),
+          ],
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text(
+          'LED sayısı yazılımsal bir ayardır: fiziksel şerit uzunluğu otomatik algılanamaz, kendiniz girin. '
+          '0 = kanal kapalı. Değişiklik cihazda kalıcı saklanır.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+      if (pendingReboot)
+        ListTile(
+          leading: const Icon(Icons.restart_alt, color: AppColors.warning),
+          title: const Text('Yeniden başlatma gerekli'),
+          subtitle: const Text('Bazı değişiklikler cihaz yeniden başlayınca geçerli olur.'),
+          trailing: TextButton(
+            key: const Key('led_reboot'),
+            onPressed: _busy ? null : () => _run((api) => api.reboot(), ok: 'Cihaz yeniden başlatılıyor…'),
+            child: const Text('Yeniden başlat'),
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _applyLeds() async {
+    final conn = ref.read(connectionProvider);
+    final wanted = <int, int>{};
+    for (final ch in _ledDirty) {
+      final v = _ledValue(ch);
+      if (v != null && v != (conn.channels[ch]?.ledCount ?? 0)) wanted[ch] = v;
+    }
+    if (wanted.isEmpty) {
+      setState(_ledDirty.clear);
+      return;
+    }
+    // Önce küçülenler, sonra büyüyenler: toplam bütçe geçici olarak aşılmasın
+    final order = wanted.keys.toList()
+      ..sort((a, b) => (wanted[a]! - (conn.channels[a]?.ledCount ?? 0)).compareTo(wanted[b]! - (conn.channels[b]?.ledCount ?? 0)));
+    await _run((api) async {
+      for (final ch in order) {
+        await api.setChannelConfig(ch, ledCount: wanted[ch]);
+      }
+      // Cihaz durumu WebSocket'ten gelir: uygulanana (veya yeniden başlatma bekleyene) kadar bekle
+      final until = DateTime.now().add(const Duration(seconds: 4));
+      while (DateTime.now().isBefore(until)) {
+        final c = ref.read(connectionProvider).channels;
+        final done = wanted.entries.every((e) =>
+            c[e.key]?.ledCount == e.value || c[e.key]?.pending?.ledCount == e.value);
+        if (done) break;
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+      final c = ref.read(connectionProvider).channels;
+      final failed = wanted.entries
+          .where((e) => c[e.key]?.ledCount != e.value && c[e.key]?.pending?.ledCount != e.value)
+          .map((e) => 'Kanal ${e.key}')
+          .toList();
+      if (failed.isNotEmpty) {
+        throw ApiException('led_budget_exceeded', message: '${failed.join(', ')}: LED sayısı uygulanamadı (toplam sınırı veya bellek).');
+      }
+      if (mounted) setState(_ledDirty.clear);
+      await ref.read(connectionProvider.notifier).refreshInfo();
+    }, ok: 'LED sayıları kaydedildi.');
   }
 
   /// WLED (iPhone/Android) uygulaması uyumluluğu: erişim modu.

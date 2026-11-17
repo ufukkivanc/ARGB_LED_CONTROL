@@ -13,6 +13,7 @@ import 'package:argb_controller/widgets/brightness_slider.dart';
 import 'package:argb_controller/widgets/color_wheel.dart';
 import 'package:argb_controller/widgets/effect_selector.dart';
 import 'package:argb_controller/widgets/led_strip_preview.dart';
+import 'package:argb_controller/widgets/palette_editor.dart';
 
 /// The primary control dashboard for the ESP32 Smart ARGB LED Controller.
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -49,6 +50,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   void _updateIntensity(int intensity) {
     ref.read(deviceProvider.notifier).setIntensity(intensity);
+  }
+
+  void _updatePalette(List<LedColor> palette) {
+    ref.read(deviceProvider.notifier).setPalette(palette);
   }
 
   void _updateSecondary(LedColor color) {
@@ -152,6 +157,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           children: [
             for (var ch = 1; ch <= 4; ch++)
               ChoiceChip(
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 label: Text('Kanal $ch${(conn.channels[ch]?.enabled ?? false) ? '' : ' (kapalı)'}'),
                 selected: selectedChannel == ch,
                 onSelected: (conn.channels[ch]?.enabled ?? false)
@@ -233,175 +240,291 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 580),
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              children: [
-                if (mode == AppMode.device) ..._deviceBanners(conn, selectedChannel),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            // Kırılma noktaları: <650 kompakt tek sütun, 650–950 geniş kartlar/çiftler, ≥950 iki sütun
+            final wide = w >= 950;
+            final medium = !wide && w >= 650;
+            final pad = w < 650 ? 12.0 : 20.0;
+            final contentW = (w - pad * 2).clamp(0.0, 1400.0);
+            final colW = wide ? (contentW - 16) * 0.42 : contentW;
+            final wheelSize = (wide ? (contentW - 16) * 0.58 - 40 : contentW - 32).clamp(160.0, 240.0);
 
-                // ── 1. Power & Status Card ─────────────────────────────
-                _buildPowerCard(state, currentColor),
-                const SizedBox(height: 16),
+            final banners = mode == AppMode.device ? _deviceBanners(conn, selectedChannel) : <Widget>[];
+            final power = _buildPowerCard(state, currentColor,
+                ledCount: mode == AppMode.device ? conn.channels[selectedChannel]?.ledCount : null);
+            final strip = LedStripPreview(
+              isOn: state.isOn,
+              color: state.color,
+              effectType: state.effectType,
+              brightness: state.brightness,
+              speed: state.speed,
+              pixelCount: 20,
+            );
+            final colorInfo = _buildColorInfoCard(state, currentColor);
+            final brightness = BrightnessSlider(
+              brightness: state.brightness,
+              onBrightnessChanged: _updateBrightness,
+              activeColor: state.isOn ? currentColor : AppColors.textHint,
+            );
+            final telemetry = _buildTelemetryCard();
+            const gap = SizedBox(height: 12);
 
-                // ── 2. Live Simulated LED Strip ────────────────────────
-                LedStripPreview(
-                  isOn: state.isOn,
-                  color: state.color,
-                  effectType: state.effectType,
-                  brightness: state.brightness,
-                  speed: state.speed,
-                  pixelCount: 20,
-                ),
-                const SizedBox(height: 16),
-
-                // ── 3. Color Swatch & Realtime Info Preview ─────────────
-                _buildColorInfoCard(state, currentColor),
-                const SizedBox(height: 16),
-
-                // ── 4. Brightness Slider ───────────────────────────────
-                BrightnessSlider(
-                  brightness: state.brightness,
-                  onBrightnessChanged: _updateBrightness,
-                  activeColor: state.isOn ? currentColor : AppColors.textHint,
-                ),
-                const SizedBox(height: 20),
-
-                // ── 5. Navigation Tab Switcher ──────────────────────────
-                _buildTabSwitcher(),
-                const SizedBox(height: 16),
-
-                // ── 6. Tab Content ─────────────────────────────────────
-                if (_selectedTabIndex == 0) ...[
-                  // Active effect reminder banner when in color tab
-                  if (state.effectType != EffectType.staticColor)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.auto_awesome, size: 16, color: AppColors.secondary),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Aktif Efekt: ${_getEffectName(state.effectType)}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          TextButton(
-                            onPressed: () => _updateEffect(EffectType.staticColor),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              'Sabit Renk Yap',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.secondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Color Wheel View
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        width: 1,
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                    child: ColorWheel(
-                      color: state.color,
-                      onColorChanged: _updateColor,
-                      size: 240,
-                    ),
+            Widget pair(Widget l, Widget r) => IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [Expanded(child: l), const SizedBox(width: 12), Expanded(child: r)],
                   ),
-                ] else if (_selectedTabIndex == 1) ...[
-                  // Effects View
-                  EffectSelector(
-                    selectedType: state.effectType,
-                    onEffectSelected: _updateEffect,
-                    speed: state.speed,
-                    onSpeedChanged: _updateSpeed,
-                    intensity: state.intensity,
-                    onIntensityChanged: _updateIntensity,
-                    supportedEffects: mode == AppMode.device ? conn.info?.supportedEffects : null,
-                  ),
-                  if (effectCaps(state.effectType).color2) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 1),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                      child: Column(
-                        children: [
-                          const Text(
-                            'İKİNCİ RENK',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.1,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ColorWheel(
-                            color: state.secondaryColor,
-                            onColorChanged: _updateSecondary,
-                            size: 200,
-                          ),
-                        ],
-                      ),
+                );
+
+            final tabs = <Widget>[
+              _buildTabSwitcher(),
+              gap,
+              ..._tabContent(state, mode, conn, wheelSize),
+            ];
+
+            final List<Widget> children;
+            if (wide) {
+              children = [
+                ...banners,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: colW,
+                      child: Column(children: [power, gap, strip, gap, colorInfo, gap, brightness, gap, telemetry]),
                     ),
+                    const SizedBox(width: 16),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: tabs)),
                   ],
-                ] else ...[
-                  // Scenes View
-                  _buildScenesGrid(),
-                ],
+                ),
+              ];
+            } else if (medium) {
+              children = [
+                ...banners,
+                pair(power, colorInfo),
+                gap,
+                strip,
+                gap,
+                brightness,
+                gap,
+                ...tabs,
+                gap,
+                telemetry,
+              ];
+            } else {
+              children = [
+                ...banners,
+                power,
+                gap,
+                strip,
+                gap,
+                colorInfo,
+                gap,
+                brightness,
+                gap,
+                ...tabs,
+                gap,
+                telemetry,
+              ];
+            }
 
-                const SizedBox(height: 20),
-
-                // ── 7. Hardware Telemetry Card ─────────────────────────
-                _buildTelemetryCard(),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: pad, vertical: 8),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1400),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildPowerCard(dynamic state, Color currentColor) {
+  /// Sekme içeriği (Renk çarkı / Efektler / Sahneler) — tüm düzenlerde aynı bileşenler.
+  List<Widget> _tabContent(dynamic state, AppMode mode, DeviceConnection conn, double wheelSize) {
+    return [
+    // ── 6. Tab Content ─────────────────────────────────────
+    if (_selectedTabIndex == 0) ...[
+      // Active effect reminder banner when in color tab
+      if (state.effectType != EffectType.staticColor)
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, size: 16, color: AppColors.secondary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Aktif Efekt: ${_getEffectName(state.effectType)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => _updateEffect(EffectType.staticColor),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Sabit Renk Yap',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.secondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+      // Color Wheel View
+      Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.06),
+            width: 1,
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        child: ColorWheel(
+          color: state.color,
+          onColorChanged: _updateColor,
+          size: wheelSize,
+        ),
+      ),
+      const SizedBox(height: 12),
+      PaletteEditor(
+        palette: state.palette,
+        baseColor: state.color,
+        wheelSize: (wheelSize * 0.85).clamp(150.0, 200.0),
+        enabled: mode != AppMode.device || conn.info == null || conn.info!.supportsPalette,
+        onChanged: _updatePalette,
+      ),
+    ] else if (_selectedTabIndex == 1) ...[
+      if (state.palette.isNotEmpty) ...[
+        _paletteNote(state),
+        const SizedBox(height: 12),
+      ],
+      // Effects View
+      EffectSelector(
+        selectedType: state.effectType,
+        onEffectSelected: _updateEffect,
+        speed: state.speed,
+        onSpeedChanged: _updateSpeed,
+        intensity: state.intensity,
+        onIntensityChanged: _updateIntensity,
+        supportedEffects: mode == AppMode.device ? conn.info?.supportedEffects : null,
+      ),
+      if (effectCaps(state.effectType).color2 && state.palette.isEmpty) ...[
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 1),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+          child: Column(
+            children: [
+              const Text(
+                'İKİNCİ RENK',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ColorWheel(
+                color: state.secondaryColor,
+                onColorChanged: _updateSecondary,
+                size: (wheelSize * 0.85).clamp(150.0, 200.0),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ] else ...[
+      // Scenes View
+      _buildScenesGrid(),
+    ],
+    ];
+  }
+
+  /// Efektler sekmesinde: palet etkinken efektin yalnızca palet renklerini kullandığını belirtir.
+  Widget _paletteNote(dynamic state) {
+    final palette = state.palette as List<LedColor>;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        children: [
+          for (final c in palette)
+            Container(
+              width: 14,
+              height: 14,
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(color: c.toColor(), shape: BoxShape.circle),
+            ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Palet etkin (${palette.length} renk): efekt yalnızca palet renklerini kullanır.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _selectedTabIndex = 0),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Düzenle', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.secondary)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPowerCard(dynamic state, Color currentColor, {int? ledCount}) {
     final isOn = state.isOn as bool;
 
     return Container(
@@ -423,7 +546,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           // Power Button with Glow Ring
@@ -490,7 +613,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   isOn
-                      ? '60 LED Aktif • Parlaklık: ${((state.brightness / 255.0) * 100).round()}%'
+                      ? '${ledCount ?? 60} LED Aktif • Parlaklık: ${((state.brightness / 255.0) * 100).round()}%'
                       : 'Şerit bekleme modunda',
                   style: const TextStyle(
                     fontSize: 12,
@@ -650,13 +773,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 color: isSelected ? AppColors.primaryLight : AppColors.textHint,
               ),
               const SizedBox(width: 6),
-              Text(
+              Flexible(
+                child: Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                   color: isSelected ? Colors.white : AppColors.textSecondary,
                 ),
+              ),
               ),
             ],
           ),
@@ -672,11 +799,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: scenes.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 2.3,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 300,
+        mainAxisExtent: 60,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
       ),
       itemBuilder: (context, index) {
         final scene = scenes[index];

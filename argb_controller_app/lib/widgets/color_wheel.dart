@@ -104,11 +104,12 @@ class _ColorWheelState extends State<ColorWheel> {
         const SizedBox(height: 20),
 
         // ── Preset Color Swatches ──────────────────────────────────────
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+        // Dar alanda satır kırar (yatay kaydırma/kesilme yok)
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            runSpacing: 6,
             children: [
               _buildPresetChip(LedColor.red, 'Kırmızı'),
               _buildPresetChip(LedColor.orange, 'Turuncu'),

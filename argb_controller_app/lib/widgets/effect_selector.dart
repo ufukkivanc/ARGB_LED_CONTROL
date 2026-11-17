@@ -28,7 +28,6 @@ class EffectSelector extends StatelessWidget {
   });
 
   Widget _noteCard(String text) => Container(
-        margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -52,7 +51,6 @@ class EffectSelector extends StatelessWidget {
   }) {
     return Builder(builder: (context) {
       return Container(
-        margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -119,36 +117,53 @@ class EffectSelector extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Hız / Yoğunluk (yalnızca bu efektin kullandığı parametreler) ──
-        if (effectCaps(selectedType).speed)
-          _sliderCard(
-            icon: Icons.speed_rounded,
-            label: 'EFEKT HIZI',
-            value: speed,
-            onChanged: onSpeedChanged,
-            min: 1,
-          )
-        else
-          _noteCard('Bu efekt hızdan etkilenmez.'),
-        if (effectCaps(selectedType).intensity && onIntensityChanged != null)
-          _sliderCard(
-            icon: Icons.tune_rounded,
-            label: effectIntensityLabel(selectedType),
-            value: intensity,
-            onChanged: onIntensityChanged!,
-            min: 0,
-          ),
+        // ── Hız / Yoğunluk: geniş alanda yan yana, dar alanda alt alta ──
+        LayoutBuilder(builder: (context, c) {
+          final speedW = effectCaps(selectedType).speed
+              ? _sliderCard(
+                  icon: Icons.speed_rounded,
+                  label: 'EFEKT HIZI',
+                  value: speed,
+                  onChanged: onSpeedChanged,
+                  min: 1,
+                )
+              : _noteCard('Bu efekt hızdan etkilenmez.');
+          final hasIntensity = effectCaps(selectedType).intensity && onIntensityChanged != null;
+          final intensityW = hasIntensity
+              ? _sliderCard(
+                  icon: Icons.tune_rounded,
+                  label: effectIntensityLabel(selectedType),
+                  value: intensity,
+                  onChanged: onIntensityChanged!,
+                  min: 0,
+                )
+              : null;
+          Widget body;
+          if (intensityW != null && c.maxWidth >= 480) {
+            body = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: speedW),
+              const SizedBox(width: 12),
+              Expanded(child: intensityW),
+            ]);
+          } else {
+            body = Column(children: [
+              speedW,
+              if (intensityW != null) ...[const SizedBox(height: 10), intensityW],
+            ]);
+          }
+          return Padding(padding: const EdgeInsets.only(bottom: 12), child: body);
+        }),
 
         // ── Effects Grid ───────────────────────────────────────────────
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: effects.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 2.2,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 300,
+            mainAxisExtent: 60,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
           ),
           itemBuilder: (context, index) {
             final effect = effects[index];
