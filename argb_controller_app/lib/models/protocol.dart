@@ -152,6 +152,19 @@ class ChannelState {
 }
 
 /// `set` mesajı için kısmi alanlar (yalnızca değişenler).
+/// DeviceState'in tüm protokol alanları (çoklu kanalda "dokunulan" alanı açıkça göndermek için).
+Map<String, dynamic> deviceStateToFields(DeviceState s) => {
+      'power': s.isOn,
+      'color': colorToWire(s.color),
+      'color2': colorToWire(s.secondaryColor),
+      'effect': s.effectType.name,
+      'brightness': s.brightness,
+      'speed': s.speed,
+      'direction': s.direction >= 0 ? 1 : -1,
+      'intensity': s.intensity,
+      'palette': paletteToWire(s.palette),
+    };
+
 Map<String, dynamic> deviceStateDiffToFields(DeviceState from, DeviceState to) {
   final f = <String, dynamic>{};
   if (from.isOn != to.isOn) f['power'] = to.isOn;

@@ -5,7 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:argb_controller/services/device_discovery.dart';
 import 'package:argb_controller/services/token_store.dart';
+import 'package:argb_controller/state/channel_selection.dart';
 import 'package:argb_controller/state/connection_controller.dart';
+
+export 'package:argb_controller/state/channel_selection.dart';
 
 // ── Kalıcı (gizli olmayan) ayarlar ────────────────────────────────────────
 // Token ve Wi-Fi şifresi BURADA saklanmaz. Yalnızca mod, cihaz adresleri ve
@@ -179,5 +182,46 @@ final connectionProvider =
   );
 });
 
-/// Seçili LED kanalı (1..4) — yalnızca cihaz modunda anlamlıdır.
-final selectedChannelProvider = StateProvider<int>((ref) => 1);
+/// Cihazda etkin (LED sayısı > 0) kanallar.
+Set<int> enabledChannelsOf(DeviceConnection conn) => {
+      for (final e in conn.channels.entries)
+        if (e.value.enabled && e.value.ledCount > 0) e.key,
+    };
+
+/// Çoklu kanal seçimi (v0.3.2). Kurallar: [ChannelSelection].
+class ChannelSelectionNotifier extends StateNotifier<ChannelSelection> {
+  ChannelSelectionNotifier() : super(const ChannelSelection());
+
+  Set<int> _enabled = const {};
+
+  /// Bağlantı durumu değişince çağrılır (kanal listesi boşalırsa — ör. başka cihaz — seçim sıfırlanır).
+  void sync(DeviceConnection conn) {
+    if (conn.channels.isEmpty) {
+      _enabled = const {};
+      if (state != const ChannelSelection()) state = const ChannelSelection();
+      return;
+    }
+    _enabled = enabledChannelsOf(conn);
+    final next = state.reconcile(_enabled);
+    if (next != state) state = next;
+  }
+
+  void toggle(int ch) => state = state.toggle(ch, _enabled);
+  void selectAll() => state = state.selectAll(_enabled);
+  void clear() => state = state.clear();
+}
+
+final channelSelectionProvider =
+    StateNotifierProvider<ChannelSelectionNotifier, ChannelSelection>((ref) {
+  final n = ChannelSelectionNotifier();
+  n.sync(ref.read(connectionProvider));
+  ref.listen<DeviceConnection>(connectionProvider, (_, c) => n.sync(c));
+  return n;
+});
+
+/// Kontrollerin gösterdiği kanal: seçili en küçük kanal (seçim boşsa ilk etkin kanal). Yalnızca cihaz modunda anlamlı.
+final referenceChannelProvider = Provider<int?>((ref) {
+  final sel = ref.watch(channelSelectionProvider);
+  final conn = ref.watch(connectionProvider);
+  return sel.referenceChannel(enabledChannelsOf(conn));
+});

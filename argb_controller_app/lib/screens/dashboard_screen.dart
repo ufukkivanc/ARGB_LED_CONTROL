@@ -10,6 +10,7 @@ import 'package:argb_controller/state/app_state.dart';
 import 'package:argb_controller/state/connection_controller.dart';
 import 'package:argb_controller/theme/app_colors.dart';
 import 'package:argb_controller/widgets/brightness_slider.dart';
+import 'package:argb_controller/widgets/channel_selector.dart';
 import 'package:argb_controller/widgets/color_wheel.dart';
 import 'package:argb_controller/widgets/effect_selector.dart';
 import 'package:argb_controller/widgets/led_strip_preview.dart';
@@ -113,7 +114,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   /// Gerçek cihaz modunda: bağlantı uyarısı ve kanal seçici.
-  List<Widget> _deviceBanners(DeviceConnection conn, int selectedChannel) {
+  List<Widget> _deviceBanners(DeviceConnection conn, ChannelSelection selection) {
     final widgets = <Widget>[];
     if (conn.status != LinkStatus.connected) {
       String msg;
@@ -150,23 +151,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ));
     }
     if (conn.channels.isNotEmpty) {
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Wrap(
-          spacing: 8,
-          children: [
-            for (var ch = 1; ch <= 4; ch++)
-              ChoiceChip(
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                label: Text('Kanal $ch${(conn.channels[ch]?.enabled ?? false) ? '' : ' (kapalı)'}'),
-                selected: selectedChannel == ch,
-                onSelected: (conn.channels[ch]?.enabled ?? false)
-                    ? (_) => ref.read(selectedChannelProvider.notifier).state = ch
-                    : null,
-              ),
-          ],
-        ),
+      final sel = ref.read(channelSelectionProvider.notifier);
+      widgets.add(ChannelSelector(
+        channels: conn.channels,
+        selection: selection,
+        onToggle: sel.toggle,
+        onSelectAll: sel.selectAll,
+        onClear: sel.clear,
       ));
     }
     return widgets;
@@ -195,7 +186,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final currentColor = state.color.toColor();
     final mode = ref.watch(appModeProvider);
     final conn = ref.watch(connectionProvider);
-    final selectedChannel = ref.watch(selectedChannelProvider);
+    final selection = ref.watch(channelSelectionProvider);
+    final refChannel = ref.watch(referenceChannelProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -251,9 +243,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final colW = wide ? (contentW - 16) * 0.42 : contentW;
             final wheelSize = (wide ? (contentW - 16) * 0.58 - 40 : contentW - 32).clamp(160.0, 240.0);
 
-            final banners = mode == AppMode.device ? _deviceBanners(conn, selectedChannel) : <Widget>[];
+            final banners = mode == AppMode.device ? _deviceBanners(conn, selection) : <Widget>[];
             final power = _buildPowerCard(state, currentColor,
-                ledCount: mode == AppMode.device ? conn.channels[selectedChannel]?.ledCount : null);
+                ledCount: mode == AppMode.device ? (refChannel == null ? null : conn.channels[refChannel]?.ledCount) : null);
             final strip = LedStripPreview(
               isOn: state.isOn,
               color: state.color,
@@ -886,7 +878,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           _TelemetryItem(label: 'Çip', value: 'ESP32-S3'),
           _TelemetryItem(label: 'LED Türü', value: 'WS2812B'),
-          _TelemetryItem(label: 'Pin', value: 'GPIO 2'),
+          _TelemetryItem(label: 'Kanal', value: 'CH1–CH4'),
           _TelemetryItem(label: 'Gecikme', value: '12 ms'),
         ],
       ),

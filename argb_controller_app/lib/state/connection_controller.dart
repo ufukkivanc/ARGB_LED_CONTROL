@@ -131,7 +131,7 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
   int _session = 0; // eski oturumların geç gelen olaylarını yok saymak için
 
   final Map<int, Map<String, dynamic>> _pending = {};
-  final Map<String, ({int ch, Map<String, dynamic> fields})> _inFlight = {};
+  final Map<String, ({List<int> chs, Map<String, dynamic> fields})> _inFlight = {};
   final Map<int, Map<String, dynamic>> _lastSent = {};
   final Map<int, Map<String, ({DateTime at, dynamic value})>> _touched = {};
 
@@ -171,6 +171,22 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
   /// Kısmi alan güncellemesi. Throttle + birleştirme uygulanır.
   void sendSet(int ch, Map<String, dynamic> fields) {
     if (!state.isConnected || fields.isEmpty) return;
+    if (_queueFields(ch, fields)) _schedule();
+  }
+
+  /// Aynı alanları birden çok kanala gönderir (çoklu kanal seçimi). Kanal başına eleme yapılır: o alanı zaten
+  /// aynı değerde olan kanal atlanır (efekti/rengi değişmeyen kanalın animasyonu dokunulmadan kalır). Aynı alan
+  /// kümesine sahip kanallar tek bir `set` mesajında (`ch: [..]`) birleştirilir.
+  void sendSetMulti(Iterable<int> chs, Map<String, dynamic> fields) {
+    if (!state.isConnected || fields.isEmpty) return;
+    var any = false;
+    for (final ch in chs) {
+      if (_queueFields(ch, fields)) any = true;
+    }
+    if (any) _schedule();
+  }
+
+  bool _queueFields(int ch, Map<String, dynamic> fields) {
     final last = _lastSent.putIfAbsent(ch, () => {});
     final pend = _pending.putIfAbsent(ch, () => {});
     final touched = _touched.putIfAbsent(ch, () => {});
@@ -181,8 +197,7 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
       pend[k] = v;
       touched[k] = (at: now, value: v);
     });
-    if (pend.isEmpty) return;
-    _schedule();
+    return pend.isNotEmpty;
   }
 
   // ── Bağlantı ──────────────────────────────────────────────────────────
@@ -318,8 +333,10 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
     final inflight = id is String ? _inFlight.remove(id) : null;
     if (code == 'busy' && inflight != null) {
       // Kuyruk doluydu: yalnızca henüz yenisi olmayan alanları yeniden gönder
-      final pend = _pending.putIfAbsent(inflight.ch, () => {});
-      inflight.fields.forEach((k, v) => pend.putIfAbsent(k, () => v));
+      for (final ch in inflight.chs) {
+        final pend = _pending.putIfAbsent(ch, () => {});
+        inflight.fields.forEach((k, v) => pend.putIfAbsent(k, () => v));
+      }
       _flushTimer?.cancel();
       _flushTimer = Timer(const Duration(milliseconds: 100), _flush);
     } else if (code == 'unauthorized') {
@@ -414,15 +431,32 @@ class DeviceConnectionController extends StateNotifier<DeviceConnection> {
       return;
     }
     _lastFlush = DateTime.now();
-    final entries = _pending.entries.where((e) => e.value.isNotEmpty).toList();
-    for (final e in entries) {
+    // Aynı alan/değer kümesine sahip kanalları grupla: tek mesaj, cihazda tek komut (hız sınırına da dost)
+    final groups = <String, ({List<int> chs, Map<String, dynamic> fields})>{};
+    final keys = _pending.keys.toList()..sort();
+    for (final ch in keys) {
+      final f = _pending[ch]!;
+      if (f.isEmpty) continue;
+      final sortedKeys = f.keys.toList()..sort();
+      final sig = jsonEncode([for (final k in sortedKeys) [k, f[k]]]);
+      final g = groups.putIfAbsent(sig, () => (chs: <int>[], fields: Map<String, dynamic>.from(f)));
+      g.chs.add(ch);
+    }
+    for (final g in groups.values) {
       final id = 'c${++_idCounter}';
-      final fields = Map<String, dynamic>.from(e.value);
-      _inFlight[id] = (ch: e.key, fields: fields);
+      _inFlight[id] = (chs: g.chs, fields: g.fields);
       if (_inFlight.length > 64) _inFlight.remove(_inFlight.keys.first);
-      final last = _lastSent.putIfAbsent(e.key, () => {});
-      fields.forEach((k, v) => last[k] = v);
-      _sendRaw({'v': kProtocolVersion, 'type': 'set', 'id': id, 'ch': e.key, ...fields});
+      for (final ch in g.chs) {
+        final last = _lastSent.putIfAbsent(ch, () => {});
+        g.fields.forEach((k, v) => last[k] = v);
+      }
+      _sendRaw({
+        'v': kProtocolVersion,
+        'type': 'set',
+        'id': id,
+        'ch': g.chs.length == 1 ? g.chs.first : g.chs,
+        ...g.fields,
+      });
     }
     _pending.clear();
   }
