@@ -96,12 +96,19 @@ void CommandProcessor::_apply(Command& cmd) {
         case CmdType::WifiConnect:  _applyWifiConnect(cmd); break;
 
         case CmdType::WifiScan: {
-            if (WiFiManager::instance().startScan()) {
-                _scanRunning = true;
-                _scanStarted = millis();
+            // Süren tarama varsa (seri kurulum dahil) yeni radyo taraması başlatılmaz; aynı sonuca katılınır.
+            WiFiManager& w = WiFiManager::instance();
+            uint32_t gen = w.scanGeneration();
+            if (w.requestScan()) {
+                if (!_scanRunning) {
+                    _scanRunning = true;
+                    _scanGen = gen;
+                    _scanStarted = millis();
+                }
             } else if (!_scanRunning) {
                 static ScanSnapshot empty;
                 empty.status = ScanStatus::Done;
+                empty.failed = true;
                 empty.count = 0;
                 SnapshotStore::instance().setScan(empty);
             }
@@ -358,9 +365,10 @@ void CommandProcessor::_updateScan(uint32_t now) {
     static ScanSnapshot snap;   // yığını şişirmemek için statik
     WiFiManager& w = WiFiManager::instance();
 
-    if (w.isScanComplete()) {
+    if (w.scanGeneration() != _scanGen && !w.isScanRunning()) {
         std::vector<DiscoveredNetwork> res = w.getScanResults();
         snap.status = ScanStatus::Done;
+        snap.failed = !w.lastScanOk();
         snap.count = 0;
         for (const auto& n : res) {
             if (snap.count >= SCAN_MAX_RESULTS) break;
@@ -374,8 +382,9 @@ void CommandProcessor::_updateScan(uint32_t now) {
         SnapshotStore::instance().setScan(snap);
         _scanRunning = false;
     } else if ((now - _scanStarted) > SCAN_TIMEOUT_MS) {
-        w.cancelScan();
+        // Güvenlik sınırı: WiFiManager normalde çok daha önce sonuçlandırır.
         snap.status = ScanStatus::Done;
+        snap.failed = true;
         snap.count = 0;
         SnapshotStore::instance().setScan(snap);
         _scanRunning = false;

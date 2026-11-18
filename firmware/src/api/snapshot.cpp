@@ -8,6 +8,7 @@ SnapshotStore& SnapshotStore::instance() {
 void SnapshotStore::begin() {
     if (_mutex == nullptr) _mutex = xSemaphoreCreateMutex();
     _scan.status = ScanStatus::Idle;
+    _scan.failed = false;
     _scan.count = 0;
 }
 

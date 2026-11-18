@@ -18,6 +18,8 @@ void SerialProvisioning::begin() {
 void SerialProvisioning::openWindow(uint32_t durationMs) {
     _until = millis() + durationMs;
     _open = true;
+    // Kurulum sürerken arka plan STA denemesi SoftAP/taramayı bozmasın
+    WiFiManager::instance().holdBackgroundRetry(durationMs);
     Serial.printf("[SerialSetup] Setup window OPEN for %u s (BOOT button).\n", (unsigned)(durationMs / 1000));
 }
 
@@ -86,6 +88,7 @@ void SerialProvisioning::_handleLine(const char* line) {
         return;
     }
 
+    if (isOpen()) WiFiManager::instance().holdBackgroundRetry();
     if (strcmp(cmd, "hello") == 0) { _replyStatus("hello"); return; }
     if (strcmp(cmd, "status") == 0) { _replyStatus("status"); return; }
 
@@ -95,15 +98,24 @@ void SerialProvisioning::_handleLine(const char* line) {
             _replyError("window_closed");
             return;
         }
-        if (_scanning || !WiFiManager::instance().startScan()) {
-            _replyError("scan_busy");
-            return;
+        // Tarama sürüyorsa (bu istemcinin önceki isteği veya HTTP) yeni radyo taraması başlatılmaz:
+        // istek aynı taramaya katılır ve tek bir scanResult alır. "scan_busy" artık üretilmez.
+        WiFiManager& w = WiFiManager::instance();
+        bool joined = _scanning || w.isScanRunning();
+        uint32_t gen = w.scanGeneration();
+        if (!_scanning) {
+            if (!w.requestScan()) {
+                _replyError("scan_failed");
+                return;
+            }
+            _scanning = true;
+            _scanGen = gen;
+            _scanStarted = millis();
         }
-        _scanning = true;
-        _scanStarted = millis();
         JsonDocument r;
         r["v"] = API_PROTO_VERSION;
         r["type"] = "scanStarted";
+        if (joined) r["joined"] = true;
         sendDoc(r);
         return;
     }
@@ -155,7 +167,12 @@ void SerialProvisioning::_event() {
 // Tarama bitince sonucu tek satırlık "scanResult" olarak gönderir (SSID'ler şifre değildir).
 void SerialProvisioning::_updateScan() {
     WiFiManager& w = WiFiManager::instance();
-    if (w.isScanComplete()) {
+    if (w.scanGeneration() != _scanGen && !w.isScanRunning()) {
+        _scanning = false;
+        if (!w.lastScanOk()) {               // WiFiManager tüm denemeleri tüketti
+            _replyError("scan_failed");
+            return;
+        }
         std::vector<DiscoveredNetwork> res = w.getScanResults();
         JsonDocument d;
         d["v"] = API_PROTO_VERSION;
@@ -170,9 +187,8 @@ void SerialProvisioning::_updateScan() {
             o["channel"] = n.channel;
         }
         sendDoc(d);
-        _scanning = false;
     } else if ((millis() - _scanStarted) > SCAN_TIMEOUT_MS) {
-        w.cancelScan();
+        // Güvenlik sınırı: WiFiManager normalde çok daha önce sonuçlandırır.
         _scanning = false;
         _replyError("scan_timeout");
     }

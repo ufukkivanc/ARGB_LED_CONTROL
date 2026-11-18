@@ -24,6 +24,14 @@
 // ── Wi-Fi & Provisioning Configuration ─────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS   15000
 #define WIFI_MAX_RETRY_ATTEMPTS   3
+// Denemeler arası bekleme: radyo bu sürede boştur (tarama ve SoftAP istemcileri için).
+// Arduino çekirdeğinin kendi otomatik yeniden bağlanması KAPALIDIR; tüm denemeleri WiFiManager yönetir.
+#define WIFI_RETRY_BACKOFF_MS     3000
+// AP'ye düşüldükten sonra kayıtlı ağ arka planda bu aralıkla yeniden denenir
+// (yalnızca SoftAP'ye bağlı istemci yokken ve kurulum etkinliği yokken).
+#define WIFI_BACKGROUND_RETRY_MS  120000
+// Kurulum etkinliğinden (tarama, seri pencere) sonra arka plan STA denemesi bu kadar ertelenir.
+#define WIFI_STA_HOLD_MS          60000
 #define WIFI_SCAN_INTERVAL_MS     10000
 
 #define AP_SSID_PREFIX            "ESP32-ARGB-Setup-"
@@ -36,7 +44,7 @@
 #define MDNS_HOSTNAME             "esp32-argb"
 #define HTTP_PORT                 80
 #define WS_ENDPOINT               "/ws"
-#define FIRMWARE_VERSION          "0.3.0"
+#define FIRMWARE_VERSION          "0.3.1"
 #define DEVICE_MODEL              "ESP32-WROOM-32"
 
 // ── WLED uyumluluk katmanı (docs/WLED_COMPAT.md) ───────────────────────────
@@ -86,5 +94,10 @@
 // USB seri port Wi-Fi kurulumu: yalnızca BOOT düğmesiyle açılan kısa pencerede kabul edilir
 #define SERIAL_SETUP_WINDOW_MS      120000
 #define SERIAL_SETUP_MAX_LINE       255
-#define SCAN_TIMEOUT_MS             20000
+// Wi-Fi taraması (WiFiManager tek sahip; HTTP ve seri tüketiciler aynı taramaya katılır)
+#define SCAN_MS_PER_CHANNEL         300     // aktif tarama, kanal başına (13 kanal ≈ 4–6 sn)
+#define SCAN_ATTEMPT_TIMEOUT_MS     12000   // tek deneme bekçisi: SCAN_DONE gelmezse (çekirdeğin 6 sn sınırı değil)
+#define SCAN_MAX_ATTEMPTS           3       // başarısız/zaman aşımlı deneme otomatik tekrarlanır
+#define SCAN_RETRY_DELAY_MS         500     // denemeler arası (artan: 500, 1000 ms)
+#define SCAN_TIMEOUT_MS             45000   // tüketici güvenlik sınırı (3 x 12 sn + bekleme; normalde WiFiManager önce sonuçlandırır)
 #define SCAN_MAX_RESULTS            20

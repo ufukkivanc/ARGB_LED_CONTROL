@@ -1041,6 +1041,7 @@ void ApiServer::_hWifiScanStart(AsyncWebServerRequest* r, const char*) {
     ScanSnapshot* s = new (std::nothrow) ScanSnapshot();
     if (s) {
         s->status = ScanStatus::Running;
+        s->failed = false;
         s->count = 0;
         SnapshotStore::instance().setScan(*s);
         delete s;
@@ -1055,6 +1056,7 @@ void ApiServer::_hWifiScanGet(AsyncWebServerRequest* r, const char*) {
 
     JsonDocument d;
     d["status"] = (s->status == ScanStatus::Running) ? "running" : (s->status == ScanStatus::Done ? "done" : "idle");
+    if (s->status == ScanStatus::Done && s->failed) d["error"] = "scan_failed";   // eklemeli alan
     JsonArray arr = d["networks"].to<JsonArray>();
     for (uint8_t i = 0; i < s->count; i++) {
         JsonObject o = arr.add<JsonObject>();

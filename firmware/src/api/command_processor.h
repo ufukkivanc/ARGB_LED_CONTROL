@@ -53,6 +53,7 @@ private:
     // Wi-Fi tarama
     bool     _scanRunning = false;
     uint32_t _scanStarted = 0;
+    uint32_t _scanGen = 0;      // katıldığımız taramanın WiFiManager nesil numarası
 
     uint32_t _dropped = 0;
     uint32_t _processed = 0;

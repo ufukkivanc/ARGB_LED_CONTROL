@@ -119,7 +119,7 @@ $("scan").onclick=function(){if(!winOpen)return;$("scan").disabled=true;$("list"
    api("/setup/scan").then(function(q){var j=q.j||{};
     if(!q.ok){clearInterval(scanTimer);$("list").textContent="";return}
     if(j.status==="done"){clearInterval(scanTimer);renderList(j.networks||[]);$("scan").disabled=!winOpen}
-    else if(tries>30){clearInterval(scanTimer);$("list").textContent="Tarama zaman aşımına uğradı.";$("scan").disabled=!winOpen}})},1000)})};
+    else if(tries>55){clearInterval(scanTimer);$("list").textContent="Tarama zaman aşımına uğradı.";$("scan").disabled=!winOpen}})},1000)})};
 $("connect").onclick=function(){var ssid=$("ssid").value;var pass=($("open").checked||selOpen)?"":$("pw").value;
  if(!ssid){show("err","Ağ adı gerekli.");return}
  if(pass&&(pass.length<8||pass.length>63)){show("err","WPA şifresi 8 ile 63 karakter arasında olmalı.");return}

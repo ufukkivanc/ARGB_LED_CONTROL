@@ -45,6 +45,7 @@ enum class ScanStatus : uint8_t { Idle, Running, Done };
 
 struct ScanSnapshot {
     ScanStatus  status;
+    bool        failed;     // Done + tüm denemeler başarısız (count = 0)
     uint8_t     count;
     ScanNetwork nets[SCAN_MAX_RESULTS];
 };
