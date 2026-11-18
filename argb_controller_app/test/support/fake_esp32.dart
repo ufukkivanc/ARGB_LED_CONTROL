@@ -27,6 +27,10 @@ class FakeEsp32Http {
   bool wledCompiled = true;
   int scanPollsRunning = 1;
   int _scanPolls = 0;
+  int scanStarts = 0;
+  /// Sıradaki bu kadar tarama firmware ≥ 0.3.1 gibi "done" + error:"scan_failed" ile biter.
+  int scanFailures = 0;
+  bool _scanFailing = false;
   final List<String> requests = [];
 
   List<Map<String, dynamic>> networks = [
@@ -93,10 +97,16 @@ class FakeEsp32Http {
         });
       case 'POST /api/wifi/scan':
         _scanPolls = 0;
+        scanStarts++;
+        _scanFailing = scanFailures > 0;
+        if (_scanFailing) scanFailures--;
         return _json(202, {'status': 'running'});
       case 'GET /api/wifi/scan':
         _scanPolls++;
         final running = _scanPolls <= scanPollsRunning;
+        if (!running && _scanFailing) {
+          return _json(200, {'status': 'done', 'networks': [], 'error': 'scan_failed'});
+        }
         return _json(200, {'status': running ? 'running' : 'done', 'networks': running ? [] : networks});
       case 'POST /api/wifi/connect':
         final body = jsonDecode(r.body) as Map;

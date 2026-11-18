@@ -86,13 +86,13 @@ class _UsbSetupScreenState extends ConsumerState<UsbSetupScreen> {
           _deviceCard(s),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: c.scan,
+            onPressed: s.busy ? null : c.scan,
             icon: const Icon(Icons.wifi_find),
             label: const Text('Wi-Fi Ağlarını Tara'),
           ),
         ];
       case UsbStep.scanning:
-        return [_deviceCard(s), const _Busy('ESP32 çevredeki 2.4 GHz ağları tarıyor…')];
+        return [_deviceCard(s), _Busy(s.statusText ?? 'ESP32 çevredeki 2.4 GHz ağları tarıyor…')];
       case UsbStep.networks:
         return _networks(s, c);
       case UsbStep.credentials:
@@ -187,7 +187,8 @@ class _UsbSetupScreenState extends ConsumerState<UsbSetupScreen> {
       Row(
         children: [
           const Expanded(child: Text('Wi-Fi ağınızı seçin', style: TextStyle(fontWeight: FontWeight.bold))),
-          TextButton.icon(onPressed: c.scan, icon: const Icon(Icons.refresh), label: const Text('Yeniden tara')),
+          TextButton.icon(
+              onPressed: s.busy ? null : c.scan, icon: const Icon(Icons.refresh), label: const Text('Yeniden tara')),
         ],
       ),
       const Text(

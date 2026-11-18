@@ -132,8 +132,8 @@ class DeviceApi {
 
   Future<void> startWifiScan() => _send('POST', '/api/wifi/scan');
 
-  /// (running, ağlar)
-  Future<({bool running, List<WifiNetwork> networks})> getWifiScan() async {
+  /// (running, ağlar, hata). `error` firmware ≥ 0.3.1'de tüm tarama denemeleri başarısızsa "scan_failed".
+  Future<({bool running, List<WifiNetwork> networks, String? error})> getWifiScan() async {
     final j = await _send('GET', '/api/wifi/scan');
     if (j is! Map) throw const ApiException('bad_response');
     final nets = <WifiNetwork>[];
@@ -144,7 +144,8 @@ class DeviceApi {
         if (p != null) nets.add(p);
       }
     }
-    return (running: j['status'] == 'running', networks: nets);
+    final err = j['error'];
+    return (running: j['status'] == 'running', networks: nets, error: err is String ? err : null);
   }
 
   /// Şifre yalnızca bu istek gövdesinde gider; saklanmaz/loglanmaz.

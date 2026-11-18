@@ -91,7 +91,7 @@ class SetupTuning {
   const SetupTuning({
     this.poll = const Duration(seconds: 1),
     this.pairingTimeout = const Duration(seconds: 180),
-    this.scanTimeout = const Duration(seconds: 30),
+    this.scanTimeout = const Duration(seconds: 55), // firmware ≥ 0.3.1 kendi içinde 3 × 12 sn'ye kadar dener
     this.connectTimeout = const Duration(seconds: 45),
     this.rediscoverTimeout = const Duration(seconds: 60),
   });
@@ -249,22 +249,30 @@ class SetupController extends StateNotifier<SetupState> {
 
   // ── 3) Wi-Fi tarama ───────────────────────────────────────────────────
 
+  /// Tarama sürerken gelen ikinci çağrı yok sayılır. Cihaz "scan_failed" bildirirse bir kez otomatik yeniden dener.
   Future<void> scan() async {
     final dev = state.device;
-    if (dev == null || _token == null) return;
+    if (dev == null || _token == null || state.scanning) return;
     state = state.copyWith(scanning: true, scanDone: false, clearError: true);
     final api = _api(dev);
     try {
+      var retried = false;
       await api.startWifiScan();
       final deadline = DateTime.now().add(tuning.scanTimeout);
       while (!_cancel && mounted && DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(tuning.poll);
         final r = await api.getWifiScan();
         if (!r.running) {
+          if (r.error != null && !retried) {
+            retried = true;
+            await api.startWifiScan();
+            continue;
+          }
           state = state.copyWith(
             scanning: false,
             scanDone: true,
             networks: groupNetworks(r.networks),
+            error: r.error != null ? 'ESP32 Wi-Fi taraması başarısız oldu. Tekrar tarayın.' : null,
           );
           return;
         }

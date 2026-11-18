@@ -8,7 +8,7 @@ import 'package:argb_controller/services/serial/serial_transport.dart';
 /// Tarama sonucu.
 class ScanOutcome {
   final List<WifiNetwork> networks;
-  final String? error; // window_closed | scan_busy | scan_timeout | timeout | ...
+  final String? error; // window_closed | scan_failed | scan_busy (≤0.3.0) | scan_timeout | timeout | ...
   const ScanOutcome({this.networks = const [], this.error});
   bool get ok => error == null;
 }
@@ -183,7 +183,10 @@ class SerialSetupClient {
   }
 
   /// ESP32'nin kendi Wi-Fi donanımıyla çevredeki 2.4 GHz ağları tarar.
-  Future<ScanOutcome> scan({Duration timeout = const Duration(seconds: 28)}) async {
+  ///
+  /// Firmware ≥ 0.3.1 başarısız taramayı kendi içinde en çok 3 kez dener (en kötü ≈ 3 × 12 sn);
+  /// zaman aşımı buna göre seçilmiştir. `scanStarted` ara yanıtı beklenmez, yalnızca sonuç/hata.
+  Future<ScanOutcome> scan({Duration timeout = const Duration(seconds: 50)}) async {
     final m = await _request({'cmd': 'scan'}, {'scanResult'}, timeout: timeout);
     if (m == null) return const ScanOutcome(error: 'timeout');
     if (m['type'] == 'error') return ScanOutcome(error: (m['code'] as String?) ?? 'error');
@@ -254,7 +257,9 @@ String describeSerialError(String? code) {
     case 'window_closed':
       return 'Kurulum penceresi kapalı. ESP32 üzerindeki BOOT düğmesine 3 saniye basılı tutup bırakın.';
     case 'scan_busy':
-      return 'ESP32 başka bir tarama yapıyor. Birkaç saniye sonra tekrar deneyin.';
+      return 'ESP32 meşgul (kayıtlı ağa bağlanmayı deniyor olabilir). Birkaç saniye sonra tekrar deneyin.';
+    case 'scan_failed':
+      return 'ESP32 Wi-Fi taraması başarısız oldu (birkaç kez denendi). Tekrar tarayın; sürerse kartı yeniden başlatın.';
     case 'scan_timeout':
     case 'timeout':
       return 'Cihaz zamanında yanıt vermedi.';

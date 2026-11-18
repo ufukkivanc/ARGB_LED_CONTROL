@@ -113,11 +113,19 @@ class UsbTuning {
   final Duration bootTimeout;
   final int helloAttempts;
   final Duration helloPerAttempt;
+
+  /// Geçici tarama hatalarında (scan_busy, scan_failed, scan_timeout, yanıt yok) ek deneme sayısı.
+  final int scanRetries;
+  final Duration scanRetryDelay;
+  final Duration scanTimeout;
   const UsbTuning({
     this.bootPoll = const Duration(seconds: 1),
     this.bootTimeout = const Duration(seconds: 180),
     this.helloAttempts = 15, // port açılınca kart yeniden başlayabilir (≈ 3–6 sn)
     this.helloPerAttempt = const Duration(seconds: 1),
+    this.scanRetries = 2,
+    this.scanRetryDelay = const Duration(seconds: 2),
+    this.scanTimeout = const Duration(seconds: 50),
   });
 }
 
@@ -332,23 +340,49 @@ class UsbSetupController extends StateNotifier<UsbSetupState> {
 
   // ── Tarama ────────────────────────────────────────────────────────────
 
+  /// Geçici sayılan (otomatik yeniden denenen) tarama hataları.
+  static const _transientScanErrors = {'scan_busy', 'scan_failed', 'scan_timeout', 'timeout'};
+
+  /// Ağları tarar. Tarama/bağlanma sürerken gelen ikinci çağrı yok sayılır (cihaza yeni istek gitmez).
+  /// Geçici hatalarda [UsbTuning.scanRetries] kez otomatik yeniden dener.
   Future<void> scan() async {
     final c = _client;
-    if (c == null) return;
+    if (c == null || _cmdBusy) return;
     _cmdBusy = true;
-    state = state.copyWith(step: UsbStep.scanning, busy: true, clearError: true);
+    state = state.copyWith(step: UsbStep.scanning, busy: true, clearError: true, clearStatusText: true);
     try {
-      final r = await c.scan();
-      if (!mounted) return;
+      final total = tuning.scanRetries + 1;
+      ScanOutcome r = const ScanOutcome(error: 'timeout');
+      for (var attempt = 1; attempt <= total; attempt++) {
+        if (attempt > 1) {
+          _log.note('tarama yeniden deneniyor ($attempt/$total): ${r.error}');
+          state = state.copyWith(statusText: 'Tarama yeniden deneniyor… ($attempt/$total)');
+          await Future<void>.delayed(tuning.scanRetryDelay);
+          if (!mounted || _cancel || !identical(_client, c)) return;
+        }
+        r = await c.scan(timeout: tuning.scanTimeout);
+        if (!mounted || _cancel) return;
+        if (r.ok || !_transientScanErrors.contains(r.error)) break;
+      }
       if (r.error == 'window_closed') {
         _windowClosed();
         return;
       }
       if (!r.ok) {
-        state = state.copyWith(step: UsbStep.ready, busy: false, error: describeSerialError(r.error));
+        state = state.copyWith(
+          step: UsbStep.ready,
+          busy: false,
+          clearStatusText: true,
+          error: describeSerialError(r.error),
+        );
         return;
       }
-      state = state.copyWith(step: UsbStep.networks, busy: false, networks: groupNetworks(r.networks));
+      state = state.copyWith(
+        step: UsbStep.networks,
+        busy: false,
+        clearStatusText: true,
+        networks: groupNetworks(r.networks),
+      );
     } finally {
       _cmdBusy = false;
     }

@@ -104,6 +104,35 @@ void main() {
       c.dispose();
     });
 
+    test('cihaz scan_failed bildirirse bir kez otomatik yeniden tarar', () async {
+      final esp = FakeEsp32Http()..scanFailures = 1;
+      final c = makeSetup(esp, MemoryTokenStore());
+      esp.pairingOpen = true;
+      await c.goToConnectAp();
+      await until(() => c.state.scanDone);
+      expect(esp.scanStarts, 2);
+      expect(c.state.error, isNull);
+      expect(c.state.networks.map((g) => g.ssid), contains('Home'));
+      c.dispose();
+    });
+
+    test('tarama iki kez başarısız: hata gösterilir, tarama sürerken ikinci istek gitmez', () async {
+      final esp = FakeEsp32Http()..scanFailures = 2;
+      final c = makeSetup(esp, MemoryTokenStore());
+      esp.pairingOpen = true;
+      await c.goToConnectAp();
+      await until(() => c.state.scanning);
+      await c.scan(); // sürerken: yok sayılır
+      await until(() => c.state.scanDone);
+      expect(esp.scanStarts, 2);
+      expect(c.state.error, contains('tarama'));
+      expect(c.state.networks, isEmpty);
+      await c.scan(); // kullanıcı tekrar dener
+      await until(() => c.state.scanDone && c.state.networks.isNotEmpty);
+      expect(c.state.error, isNull);
+      c.dispose();
+    });
+
     test('yanlış şifre: credentials adımına döner ve sebep gösterilir', () async {
       final esp = FakeEsp32Http()..connectShouldFail = true;
       final tokens = MemoryTokenStore();

@@ -25,6 +25,10 @@ class FakeSerialEsp32 implements SerialTransport {
   String? lastPassword; // yalnızca doğrulama için
   bool prefix = true; // false: bazı firmware sürümleri gibi ÖNEKSİZ (çıplak) JSON yanıtı
   int remainingMs = 90000;
+  /// Sıradaki taramaların döndüreceği hata kodları (boşsa tarama başarılı).
+  final List<String> scanErrors = [];
+  Duration scanDelay = const Duration(milliseconds: 30);
+  int scanCommands = 0;
 
   @override
   Stream<List<int>> get data => _out.stream;
@@ -64,13 +68,23 @@ class FakeSerialEsp32 implements SerialTransport {
         case 'status':
           _arg(_status('status'));
         case 'scan':
+          scanCommands++;
           if (!window) {
             _arg({'v': 1, 'type': 'error', 'code': 'window_closed'});
             return;
           }
+          if (scanErrors.isNotEmpty && scanErrors.first == 'scan_busy') {
+            scanErrors.removeAt(0); // ≤ 0.3.0: anında reddedilir
+            _arg({'v': 1, 'type': 'error', 'code': 'scan_busy'});
+            return;
+          }
           _arg({'v': 1, 'type': 'scanStarted'});
-          Timer(const Duration(milliseconds: 30), () {
+          Timer(scanDelay, () {
             _emit('[WiFiManager] noise line without prefix');
+            if (scanErrors.isNotEmpty) {
+              _arg({'v': 1, 'type': 'error', 'code': scanErrors.removeAt(0)});
+              return;
+            }
             _arg({'v': 1, 'type': 'scanResult', 'networks': networks});
           });
         case 'wifi':
@@ -122,6 +136,8 @@ const _fast = UsbTuning(
   bootTimeout: Duration(seconds: 2),
   helloAttempts: 3,
   helloPerAttempt: Duration(milliseconds: 300),
+  scanRetryDelay: Duration(milliseconds: 10),
+  scanTimeout: Duration(seconds: 2),
 );
 
 Future<void> until(bool Function() c, {int ms = 3000}) async {
@@ -365,6 +381,94 @@ void main() {
       await c.scan();
       expect(c.state.step, UsbStep.waitingBoot);
       expect(c.state.error, contains('BOOT'));
+      c.dispose();
+    });
+
+    test('scan_busy (eski firmware) sonrası otomatik yeniden dener ve ağları gösterir', () async {
+      final esp = FakeSerialEsp32()
+        ..window = true
+        ..scanErrors.add('scan_busy');
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      await c.scan();
+      expect(esp.scanCommands, 2);
+      expect(c.state.step, UsbStep.networks);
+      expect(c.state.networks.map((g) => g.ssid), ['Home', 'Guest']);
+      expect(c.state.error, isNull);
+      expect(c.state.statusText, isNull);
+      c.dispose();
+    });
+
+    test('scan_failed iki kez -> üçüncü denemede başarı', () async {
+      final esp = FakeSerialEsp32()
+        ..window = true
+        ..scanErrors.addAll(['scan_failed', 'scan_timeout']);
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      await c.scan();
+      expect(esp.scanCommands, 3);
+      expect(c.state.step, UsbStep.networks);
+      expect(c.state.networks, isNotEmpty);
+      c.dispose();
+    });
+
+    test('tüm denemeler başarısız: anlaşılır hata, ready adımı, tekrar taranabilir', () async {
+      final esp = FakeSerialEsp32()
+        ..window = true
+        ..scanErrors.addAll(['scan_failed', 'scan_failed', 'scan_failed']);
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      await c.scan();
+      expect(esp.scanCommands, 3); // 1 + 2 yeniden deneme
+      expect(c.state.step, UsbStep.ready);
+      expect(c.state.busy, isFalse);
+      expect(c.state.error, contains('tarama'));
+
+      await c.scan(); // kullanıcı tekrar dener: artık başarılı
+      expect(c.state.step, UsbStep.networks);
+      expect(c.state.error, isNull);
+      c.dispose();
+    });
+
+    test('tarama sürerken ikinci scan() cihaza yeni istek göndermez', () async {
+      final esp = FakeSerialEsp32()
+        ..window = true
+        ..scanDelay = const Duration(milliseconds: 150);
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      final first = c.scan();
+      await until(() => c.state.step == UsbStep.scanning);
+      await c.scan(); // anında döner
+      await c.scan();
+      await first;
+      expect(esp.scanCommands, 1);
+      expect(esp.receivedLines.where((l) => l.contains('"scan"')).length, 1);
+      expect(c.state.step, UsbStep.networks);
+      c.dispose();
+    });
+
+    test('window_closed yeniden denenmez', () async {
+      final esp = FakeSerialEsp32()..window = true;
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      esp.window = false;
+      await c.scan();
+      expect(esp.scanCommands, 1);
+      expect(c.state.step, UsbStep.waitingBoot);
+      c.dispose();
+    });
+
+    test('tarama sonrası ağ seçimi ve bağlantı (yeniden deneme sonrası)', () async {
+      final esp = FakeSerialEsp32()
+        ..window = true
+        ..scanErrors.add('scan_failed');
+      final c = UsbSetupController(FakeBackend(esp), tuning: _fast);
+      await c.connect();
+      await c.scan();
+      c.selectNetwork('Home');
+      await c.connectToWifi('Home', 'password123');
+      expect(c.state.step, UsbStep.done);
+      expect(c.state.resultIp, '192.168.1.77');
       c.dispose();
     });
 
