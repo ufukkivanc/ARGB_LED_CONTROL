@@ -52,7 +52,14 @@ bool LedChannel::begin() {
     // Attempt loading saved config & state from NVS
     ChannelConfig savedCfg;
     if (NvsStorage::instance().loadChannelConfig(_config.channelId, savedCfg)) {
+        // GPIO sabittir (config.h): NVS'teki eski pin değeri (ör. v0.3.1'de CH3=21, CH4=22) yok sayılır.
+        uint8_t fixedPin = _config.gpioPin;
+        if (savedCfg.gpioPin != fixedPin) {
+            Serial.printf("[LedChannel %d] Fixed GPIO %d (saved value %d ignored)\n",
+                          _config.channelId, fixedPin, savedCfg.gpioPin);
+        }
         _config = savedCfg;
+        _config.gpioPin = fixedPin;
     }
 
     ChannelState savedState;

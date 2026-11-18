@@ -3,6 +3,9 @@
 #include <Arduino.h>
 
 // ── Hardware Channel Defaults ──────────────────────────────────────────────
+// v0.3.2: SABİT GPIO eşlemesi (kullanıcı tarafından değiştirilemez; NVS'teki eski "pin" değeri yok sayılır):
+//   CH1 -> GPIO18, CH2 -> GPIO19, CH3 -> GPIO33, CH4 -> GPIO32
+// FastLED pini derleme zamanında ister (led_channel.cpp). Çakışma denetimi bu dosyanın sonunda static_assert ile yapılır.
 #define MAX_CHANNELS              4
 
 #define CH1_DEFAULT_GPIO          18
@@ -13,11 +16,11 @@
 #define CH2_DEFAULT_LED_COUNT     0
 #define CH2_DEFAULT_ENABLED       false
 
-#define CH3_DEFAULT_GPIO          21
+#define CH3_DEFAULT_GPIO          33
 #define CH3_DEFAULT_LED_COUNT     0
 #define CH3_DEFAULT_ENABLED       false
 
-#define CH4_DEFAULT_GPIO          22
+#define CH4_DEFAULT_GPIO          32
 #define CH4_DEFAULT_LED_COUNT     0
 #define CH4_DEFAULT_ENABLED       false
 
@@ -44,7 +47,7 @@
 #define MDNS_HOSTNAME             "esp32-argb"
 #define HTTP_PORT                 80
 #define WS_ENDPOINT               "/ws"
-#define FIRMWARE_VERSION          "0.3.1"
+#define FIRMWARE_VERSION          "0.3.2"
 #define DEVICE_MODEL              "ESP32-WROOM-32"
 
 // ── WLED uyumluluk katmanı (docs/WLED_COMPAT.md) ───────────────────────────
@@ -101,3 +104,22 @@
 #define SCAN_RETRY_DELAY_MS         500     // denemeler arası (artan: 500, 1000 ms)
 #define SCAN_TIMEOUT_MS             45000   // tüketici güvenlik sınırı (3 x 12 sn + bekleme; normalde WiFiManager önce sonuçlandırır)
 #define SCAN_MAX_RESULTS            20
+
+// ── Sabit LED GPIO eşlemesinin derleme zamanı doğrulaması (ESP32-WROOM-32) ──
+namespace pincheck {
+constexpr bool reserved(int p) {
+    return p == PAIR_BUTTON_GPIO || p == STATUS_LED_GPIO ||   // BOOT düğmesi (0), durum LED'i (2)
+           p == 1 || p == 3 ||                                // UART0 (USB seri kurulum/log)
+           p == 5 || p == 12 || p == 15 ||                    // strapping
+           (p >= 6 && p <= 11) ||                             // SPI flash
+           (p >= 34 && p <= 39) ||                            // yalnızca giriş
+           p == 20 || p == 24 || (p >= 28 && p <= 31) || p > 39;   // ESP32'de yok
+}
+}  // namespace pincheck
+static_assert(!pincheck::reserved(CH1_DEFAULT_GPIO) && !pincheck::reserved(CH2_DEFAULT_GPIO) &&
+              !pincheck::reserved(CH3_DEFAULT_GPIO) && !pincheck::reserved(CH4_DEFAULT_GPIO),
+              "LED GPIO rezerve/yalnızca-giriş/flash pinine denk geliyor");
+static_assert(CH1_DEFAULT_GPIO != CH2_DEFAULT_GPIO && CH1_DEFAULT_GPIO != CH3_DEFAULT_GPIO &&
+              CH1_DEFAULT_GPIO != CH4_DEFAULT_GPIO && CH2_DEFAULT_GPIO != CH3_DEFAULT_GPIO &&
+              CH2_DEFAULT_GPIO != CH4_DEFAULT_GPIO && CH3_DEFAULT_GPIO != CH4_DEFAULT_GPIO,
+              "İki kanal aynı GPIO'yu kullanamaz");
