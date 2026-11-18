@@ -81,7 +81,7 @@ Stage 4B: TXT `version`, `model`, `id`, `proto=1`, `paired=0|1`. **`mac` kaldır
 | `ledType` | string | `"WS2812B"` | şimdilik sabit |
 | `colorOrder` | string | `"GRB"`, `"RGB"` | **Yeniden başlatma gerektirir** |
 | `maxBrightness` | int | 0–255 | Anında uygulanır (güç/ısı sınırı) |
-| `gpio` | int | **salt okunur** | FastLED pin şablonu derleme zamanlı (CH1=18, CH2=19, CH3=21, CH4=22) |
+| `gpio` | int | **salt okunur** | Sabit, derleme zamanlı (v0.3.2: CH1=18, CH2=19, CH3=33, CH4=32; v0.3.1 ve öncesi CH3=21, CH4=22). NVS'teki eski `pin` değeri yok sayılır. Arayüzlerde gösterilmez. |
 
 Toplam LED bütçesi: tüm kanallarda `Σ ledCount ≤ MAX_TOTAL_LEDS` (öneri: 1024; her LED 3 bayt RAM + FastLED/RMT tamponları).
 Aşılırsa `error: led_budget_exceeded`.
@@ -223,6 +223,29 @@ denetleyici yeni tampona bağlanır, efekt tamponları sıfırlanır. Yalnızca 
 Çıkış süresi WS2812B için ≈30 µs/LED: kanallar RMT'de paralelse en uzun kanal belirler (300 LED ≈ 9 ms, 512 LED ≈ 15,4 ms → 60 FPS sınırda), seri ise toplam belirler.
 Sert sınırlar 512/kanal ve 1024 toplam kalır; **300/kanal ve 600 toplam üstünde yalnızca uyarı** gösterilir. `info.perf` ve WLED `info.leds.fps` ölçülen kare hızını verir.
 Güç kaynağı hesabı veya yazılımsal güç yönetimi yoktur (harici besleme kullanılır).
+
+### 3.8 Sabit GPIO eşlemesi ve çoklu kanal seçimi (v0.3.2 — protokol değişikliği yok)
+
+**GPIO (sabit, kullanıcı değiştiremez):** CH1 → GPIO18, CH2 → GPIO19, CH3 → GPIO33, CH4 → GPIO32 (`config.h`). FastLED pini derleme zamanında
+ister; eşleme derleme zamanında `static_assert` ile denetlenir: hiçbir LED pini BOOT düğmesi (0), durum LED'i (2), UART0 (1/3), strapping
+(5/12/15), SPI flash (6–11) veya yalnızca-giriş (34–39) pinine denk gelmez ve iki kanal aynı pini kullanmaz. GPIO32/33 ESP32-WROOM-32
+DevKit'te serbesttir (32 kHz kristal takılı değil), RMT çıkışı verebilir. v0.3.1'den güncellemede NVS'teki `pin_3`/`pin_4` (21/22) değeri
+açılışta yok sayılır (seri logda bir kez yazılır); bir sonraki yapılandırma kaydında doğru değer yazılır. **Donanım notu:** CH3/CH4 şeritleri
+artık GPIO33/GPIO32'ye bağlanmalıdır.
+
+**Çoklu kanal seçimi:** Windows uygulaması (`lib/state/channel_selection.dart`) ve iPhone paneli (`control_page.h`, `SEL`) AYNI kuralları uygular:
+
+1. CH1–CH4 checkbox olarak gösterilir; yalnızca etkin (LED sayısı > 0) kanal işaretlenebilir. Seçili kanal vurgulanır.
+2. İlk durum geldiğinde tüm etkin kanallar seçilir; sonradan etkinleşen kanal kendiliğinden eklenmez. Kapanan kanal seçimden çıkar.
+3. Seçim boş olabilir; boşken **hiçbir kanal komutu** (renk, hazır renk, palet, efekt, parlaklık, güç…) gönderilmez, arayüz uyarır.
+4. Kontroller seçili en küçük numaralı kanalın değerlerini gösterir (seçim boşsa ilk etkin kanal; yalnızca gösterim).
+5. Bir kontrol değişince yalnızca **değişen alan** seçili kanallara gider; seçimin kendisi cihaza hiçbir şey göndermez.
+   Rengi zaten aynı olan kanala (Windows) komut gitmez; firmware de değişmeyen alanı uygulamaz. Renk/parlaklık/palet değişimi animasyon
+   fazını sıfırlamaz; efekti değişmeyen kanalın animasyonu hiç etkilenmez.
+
+Taşıma: Windows `set` mesajı `ch:[1,3]` (aynı alanlara sahip kanallar tek mesajda; tek kanal için tamsayı `ch`), iPhone paneli WLED
+`{"seg":[{"id":0,...},{"id":2,...}]}`. iPhone paneli artık üst düzey `on`/`bri` göndermez (tüm kanalları etkilerdi; WLED uygulamasının
+kendisi göndermeye devam edebilir, davranışı değişmedi).
 
 ## 4. Kimlik Doğrulama ve Eşleştirme
 

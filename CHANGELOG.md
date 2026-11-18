@@ -2,6 +2,27 @@
 
 Biçim: [Keep a Changelog](https://keepachangelog.com/). Sürümler: uygulama `pubspec.yaml` (`x.y.z+n`), firmware `FIRMWARE_VERSION`; ikisi aynı numarayı taşır.
 
+## [0.3.2] — Yayımlanmadı
+
+### Eklendi
+- **Çoklu kanal seçimi (Windows uygulaması + iPhone paneli):** CH1–CH4 için checkbox; birden çok kanal aynı anda seçilebilir, seçili
+  kanallar vurgulanır, "Tümü"/"Hiçbiri". Renk çarkı, hazır renkler, 2. renk, palet, efekt, hız, yoğunluk, yön, parlaklık ve güç yalnızca
+  seçili kanallara uygulanır; seçilmeyen kanalların rengi/efekti/ayarları değişmez. Hiçbir kanal seçili değilse komut gönderilmez.
+  İki arayüz aynı kurallara uyar (docs/PROTOCOL.md §3.8). Seçimin kendisi cihaza komut göndermez (animasyonlar sıfırlanmaz).
+- Windows: aynı alan/değere sahip kanallar tek `set` mesajında (`ch:[..]`) birleştirilir; rengi zaten aynı olan kanala komut gitmez.
+
+### Değişti
+- **Sabit GPIO eşlemesi:** CH1 → GPIO18, CH2 → GPIO19, **CH3 → GPIO33, CH4 → GPIO32** (önceden 21/22). Derleme zamanı `static_assert`
+  ile rezerve/yalnızca-giriş/flash pin ve çakışma denetimi. NVS'teki eski pin değeri yok sayılır. Arayüzlerde GPIO numarası gösterilmez,
+  GPIO ayarı yoktur. **CH3/CH4 kablolarını yeni pinlere taşıyın.**
+- iPhone paneli güç ve parlaklığı üst düzey `on`/`bri` yerine seçili segmentlere gönderir (önceden tüm kanallar seçiliyken parlaklık
+  kanallar arasında orantılı ölçekleniyordu; artık Windows ile aynı: seçili kanallara aynı değer).
+- iPhone paneli: kanal kartı tek kanal etkinken de görünür; LED sayısı satırları "CH1…CH4" olarak adlandırıldı.
+- `run_host_tests.bat`: Visual Studio Build Tools 2026 yolu da aranır.
+
+### Korunan
+- Protokol sürümü 1 (değişiklik yok), efekt motoru, kanal bağımsızlığı, NVS kayıt düzeni, REST/WebSocket senkronu, eşleştirme ve WLED erişim modları.
+
 ## [0.3.1] — 2026-11-18
 
 ### Düzeltildi
