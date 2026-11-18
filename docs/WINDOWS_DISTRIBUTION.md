@@ -20,7 +20,7 @@ Kurulum dosyası **kod imzalı değildir**. Windows SmartScreen ilk çalıştır
 imzalanmadığını ve dosyanın henüz yeterli "itibar" kazanmadığını gösterir. Dosyanın bütünlüğünü, yayınla birlikte verilen `.sha256` dosyasıyla doğrulayabilirsiniz:
 
 ```powershell
-(Get-FileHash .\ARGBController-Setup-0.3.0.exe -Algorithm SHA256).Hash
+(Get-FileHash .\ARGBController-Setup-0.3.1.exe -Algorithm SHA256).Hash
 ```
 
 **Kod imzalama gereksinimi (kaldırmak için):** SmartScreen'in uyarısı yalnızca bir **kod imzalama sertifikası** ile imzalama (ve zamanla itibar birikimi) sonrasında kalkar.

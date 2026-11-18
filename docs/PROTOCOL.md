@@ -422,7 +422,7 @@ Tüm yanıtlar JSON. Hata biçimi §5.2 `error` ile aynıdır, HTTP durum koduyl
 | `GET /api/auth/tokens` | ✔ | Eşleştirilmiş istemciler |
 | `DELETE /api/auth/tokens/{tokenId}` | ✔ | İptal |
 | `POST /api/wifi/scan` | ✔ | Taramayı başlatır → `202` |
-| `GET /api/wifi/scan` | ✔ | `{"status":"running"\|"done","networks":[{ssid,rssi,security,channel}]}` |
+| `GET /api/wifi/scan` | ✔ | `{"status":"running"\|"done","networks":[{ssid,rssi,security,channel}],"error?":"scan_failed"}` (`error` ≥ 0.3.1, yalnızca tüm denemeler başarısızsa) |
 | `POST /api/wifi/connect` | ✔ | `{ssid,password}` → `202` (§7) |
 | `GET /api/wifi/status` | ✔ | `{state, ssid, ip, rssi, error?}` |
 | `POST /api/wifi/reset` | ✔ | Wi-Fi bilgisini siler, AP moduna döner |
@@ -658,10 +658,19 @@ bozuk satırlar atlanır — seri monitör logları protokolü bozmaz.
 | İstek | Yanıt |
 |---|---|
 | `{"cmd":"hello"}` / `{"cmd":"status"}` | `{"type":"hello\|status","deviceId","fw","window","remainingMs","state","ssid?","ip?","error?"}` |
-| `{"cmd":"scan"}` | `scanStarted` → `{"type":"scanResult","networks":[{ssid,rssi,security,channel}]}` (≤ 20) veya `error` |
+| `{"cmd":"scan"}` | `scanStarted` → `{"type":"scanResult","networks":[{ssid,rssi,security,channel}]}` (≤ 20) veya `error` (`scan_failed`). Tarama sürerken gelen ek `scan` yeni tarama başlatmaz: `{"type":"scanStarted","joined":true}` döner ve aynı tek `scanResult`'a katılır (≥ 0.3.1) |
 | `{"cmd":"wifi","ssid":"..","pass":".."}` | `wifiAccepted` → `{"type":"event","state":"connecting\|connected\|failed",...}`; `connected` olayı `ssid` + DHCP `ip` içerir |
 
-Hata kodları: `window_closed`, `scan_busy`, `scan_timeout`, `invalid_ssid`, `invalid_password`, `bad_json`, `missing_cmd`, `unknown_cmd`, `line_too_long`.
+Hata kodları: `window_closed`, `scan_failed` (≥ 0.3.1: tüm otomatik denemeler başarısız), `scan_timeout` (güvenlik sınırı, 45 sn), `scan_busy` (yalnızca ≤ 0.3.0),
+`invalid_ssid`, `invalid_password`, `bad_json`, `missing_cmd`, `unknown_cmd`, `line_too_long`.
+
+**Tarama ve STA denemeleri (≥ 0.3.1):** Tarama `WiFiManager`'ın tek sahipli durum makinesidir; HTTP (`/api/wifi/scan`, `/setup/scan`) ve seri
+tüketiciler aynı taramaya katılır. Bir STA bağlantı denemesi sürüyorsa tarama süresince duraklatılır (sürücü bağlanırken taramayı
+`ESP_ERR_WIFI_STATE` ile reddeder) ve tarama bitince aynı deneme sürer (deneme hakkı harcanmaz). Başarısız/zaman aşımlı tarama denemesi
+otomatik tekrarlanır (en çok 3, kanal başına 300 ms aktif tarama). Bitiş sürücünün `SCAN_DONE` olayıyla belirlenir; Arduino `scanComplete()`'in
+6 sn'deki erken `WIFI_SCAN_FAILED`'i (20 × 300 ms) yok sayılır — AP+STA modunda gerçek tarama ≈ 9 sn sürer. `SCAN_DONE` 12 sn içinde gelmezse tarama durdurulup yeniden denenir. Arduino çekirdeğinin otomatik yeniden
+bağlanması kapalıdır: kayıtlı ağ bulunamazsa 3 deneme (aralarında 3 sn) yapılır, ardından SoftAP açılır ve durum `failed` olur; kayıtlı
+ağ arka planda 120 sn'de bir **tek** denemeyle sınanır — yalnızca SoftAP'ye bağlı istemci yokken, kurulum penceresi/tarama yokken.
 
 **Güvenlik/NVS:** SSID/şifre loglanmaz ve yankılanmaz; satır tamponu işlendikten sonra sıfırlanır. Kimlik bilgisi (mevcut `WiFiManager` yoluyla)
 yalnızca bağlantı **başarılı** olunca NVS'e yazılır; sonraki açılışlarda `WiFiManager::begin()` otomatik bağlanır.
