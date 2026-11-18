@@ -81,7 +81,7 @@ Stage 4B: TXT `version`, `model`, `id`, `proto=1`, `paired=0|1`. **`mac` kaldır
 | `ledType` | string | `"WS2812B"` | şimdilik sabit |
 | `colorOrder` | string | `"GRB"`, `"RGB"` | **Yeniden başlatma gerektirir** |
 | `maxBrightness` | int | 0–255 | Anında uygulanır (güç/ısı sınırı) |
-| `gpio` | int | **salt okunur** | Sabit, derleme zamanlı (v0.3.2: CH1=18, CH2=19, CH3=33, CH4=32; v0.3.1 ve öncesi CH3=21, CH4=22). NVS'teki eski `pin` değeri yok sayılır. Arayüzlerde gösterilmez. |
+| `gpio` | int | **salt okunur** | Sabit, derleme zamanlı (v0.3.2: CH1=18, CH2=19, CH3=22, CH4=23; v0.3.1 ve öncesi CH3=21, CH4=22). NVS'teki eski `pin` değeri yok sayılır. Arayüzlerde gösterilmez. |
 
 Toplam LED bütçesi: tüm kanallarda `Σ ledCount ≤ MAX_TOTAL_LEDS` (öneri: 1024; her LED 3 bayt RAM + FastLED/RMT tamponları).
 Aşılırsa `error: led_budget_exceeded`.
@@ -226,12 +226,18 @@ Güç kaynağı hesabı veya yazılımsal güç yönetimi yoktur (harici besleme
 
 ### 3.8 Sabit GPIO eşlemesi ve çoklu kanal seçimi (v0.3.2 — protokol değişikliği yok)
 
-**GPIO (sabit, kullanıcı değiştiremez):** CH1 → GPIO18, CH2 → GPIO19, CH3 → GPIO33, CH4 → GPIO32 (`config.h`). FastLED pini derleme zamanında
-ister; eşleme derleme zamanında `static_assert` ile denetlenir: hiçbir LED pini BOOT düğmesi (0), durum LED'i (2), UART0 (1/3), strapping
-(5/12/15), SPI flash (6–11) veya yalnızca-giriş (34–39) pinine denk gelmez ve iki kanal aynı pini kullanmaz. GPIO32/33 ESP32-WROOM-32
-DevKit'te serbesttir (32 kHz kristal takılı değil), RMT çıkışı verebilir. v0.3.1'den güncellemede NVS'teki `pin_3`/`pin_4` (21/22) değeri
-açılışta yok sayılır (seri logda bir kez yazılır); bir sonraki yapılandırma kaydında doğru değer yazılır. **Donanım notu:** CH3/CH4 şeritleri
-artık GPIO33/GPIO32'ye bağlanmalıdır.
+**GPIO (sabit, kullanıcı değiştiremez):** CH1 → GPIO18, CH2 → GPIO19, CH3 → GPIO22, CH4 → GPIO23.
+Tüm kanal pinleri (ve varsayılan LED sayısı/etkinlik) **tek merkezden** yönetilir: `firmware/include/config.h` → `LED_CHANNEL_HW`.
+Pin değiştirmek için yalnızca bu tablo düzenlenir; `led_channel.cpp` FastLED şablon pinini, `main.cpp` açılış ön-ayarını bu tablodan alır.
+Derleme zamanı `static_assert`'leri: hiçbir LED pini BOOT düğmesi (0), durum LED'i (2), UART0 (1/3), strapping (5/12/15), SPI flash (6–11),
+yalnızca-giriş (34–39) veya ESP32'de olmayan pin olamaz; iki kanal aynı pini kullanamaz (ihlal derlemeyi durdurur — doğrulandı).
+v0.3.1'den güncellemede NVS'teki `pin_N` değeri açılışta yok sayılır (farklıysa seri logda bir kez yazılır); diğer kanal ayarları aynen yüklenir.
+**Donanım notu:** v0.3.1'de CH3=21, CH4=22 idi; v0.3.2'de CH3 şeridi GPIO22'ye, CH4 şeridi GPIO23'e bağlanmalıdır.
+
+**Arayüz eşitliği:** Windows uygulaması ve iPhone paneli aynı kontrolleri sunar: CH1–CH4 çoklu seçim, renk çarkı, aynı 11 hazır renk
+(aynı sıra; test denetler), 2. renk (yalnızca 2. rengi kullanan efektlerde), 1–5 renk palet, 20 efekt, hız, yoğunluk, ters yön, parlaklık,
+aç/kapat. (Hazır sahneler yalnızca Windows'tadır.) Bir arayüzden yapılan değişiklik cihaz durumu üzerinden diğerine yansır: WLED/iPhone
+komutu → komut kuyruğu → WebSocket `state` yayını (Windows); Windows komutu → `WledCompat::notifyStateChanged` → WLED WS çerçevesi (iPhone).
 
 **Çoklu kanal seçimi:** Windows uygulaması (`lib/state/channel_selection.dart`) ve iPhone paneli (`control_page.h`, `SEL`) AYNI kuralları uygular:
 

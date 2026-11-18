@@ -12,9 +12,12 @@ Biçim: [Keep a Changelog](https://keepachangelog.com/). Sürümler: uygulama `p
 - Windows: aynı alan/değere sahip kanallar tek `set` mesajında (`ch:[..]`) birleştirilir; rengi zaten aynı olan kanala komut gitmez.
 
 ### Değişti
-- **Sabit GPIO eşlemesi:** CH1 → GPIO18, CH2 → GPIO19, **CH3 → GPIO33, CH4 → GPIO32** (önceden 21/22). Derleme zamanı `static_assert`
-  ile rezerve/yalnızca-giriş/flash pin ve çakışma denetimi. NVS'teki eski pin değeri yok sayılır. Arayüzlerde GPIO numarası gösterilmez,
-  GPIO ayarı yoktur. **CH3/CH4 kablolarını yeni pinlere taşıyın.**
+- **Sabit GPIO eşlemesi:** CH1 → GPIO18, CH2 → GPIO19, **CH3 → GPIO22, CH4 → GPIO23** (önceden CH3=21, CH4=22). Tüm kanal pinleri
+  tek merkezden: `firmware/include/config.h` → `LED_CHANNEL_HW` (pin değiştirmek için başka dosya düzenlenmez). Derleme zamanı
+  `static_assert` ile rezerve/yalnızca-giriş/flash pin ve çakışma denetimi. NVS'teki eski pin değeri yok sayılır. Arayüzlerde GPIO
+  numarası gösterilmez, GPIO ayarı yoktur. **CH3/CH4 kablolarını yeni pinlere taşıyın.**
+- **Windows ↔ iPhone eşitliği:** Windows uygulamasına "Ters yön" anahtarı eklendi (iPhone'da vardı); iPhone hazır renkleri Windows'takiyle
+  aynı 11 renk ve sıraya getirildi (test denetler).
 - iPhone paneli güç ve parlaklığı üst düzey `on`/`bri` yerine seçili segmentlere gönderir (önceden tüm kanallar seçiliyken parlaklık
   kanallar arasında orantılı ölçekleniyordu; artık Windows ile aynı: seçili kanallara aynı değer).
 - iPhone paneli: kanal kartı tek kanal etkinken de görünür; LED sayısı satırları "CH1…CH4" olarak adlandırıldı.
