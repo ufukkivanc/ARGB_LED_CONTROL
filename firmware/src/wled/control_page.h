@@ -34,6 +34,11 @@ input[type=range]{width:100%;height:36px;accent-color:var(--se);margin:0}
 .chip,.fx,.pre,.slot{border:1px solid #ffffff1a;background:var(--sl);color:#fff;border-radius:12px;padding:10px 12px;font-size:14px;min-height:44px}
 .chip.s,.fx.s,.slot.s{outline:2px solid var(--pr);background:#6c63ff33}
 .chip i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin-right:6px}.chip i.o{background:var(--ok)}
+.chg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:flex;align-items:center;gap:10px;min-height:48px;border:1px solid #ffffff1a;background:var(--sl);border-radius:12px;padding:8px 12px;font-size:15px}
+.chk input{width:22px;height:22px;margin:0;accent-color:var(--pr)}
+.chk.s{outline:2px solid var(--pr);background:#6c63ff33;font-weight:700}.chk.x{opacity:.45}
+.chh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.chh h3{margin:0}.chh button{min-height:36px;padding:6px 10px}
 .fxg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fx{text-align:left}
 .wh{position:relative;width:min(100%,260px);aspect-ratio:1;margin:8px auto;touch-action:none}
 #wc{width:100%;height:100%;border-radius:50%;display:block}
@@ -58,7 +63,8 @@ a{color:var(--se)}
 <fieldset id="ctl">
 <div class="card"><div class="row"><button id="pw" aria-label="Aç/Kapat">&#x23FB;</button>
 <div class="grow"><div class="row"><b>Parlaklık</b><span class="mu" id="bv"></span></div><input id="br" type="range" min="1" max="255"></div></div></div>
-<div class="card hide" id="chc"><h3>KANALLAR</h3><div class="chips" id="chs"></div><small class="mu">Renk, efekt ve ayarlar seçili kanallara uygulanır.</small></div>
+<div class="card" id="chc"><div class="chh"><h3>KANALLAR</h3><span><button class="btn" id="chA">Tümü</button> <button class="btn" id="chN">Hiçbiri</button></span></div>
+<div class="chg" id="chs"></div><small class="mu" id="chm" style="display:block;margin-top:8px"></small></div>
 <div class="card"><h3>RENK</h3><div class="slots"><button class="slot s" id="s0"><span id="c0"></span>1. renk</button><button class="slot" id="s1"><span id="c1"></span>2. renk</button></div>
 <div id="cw"><div class="wh"><canvas id="wc" width="240" height="240"></canvas><div id="mk"></div></div><div class="pres" id="pr"></div></div>
 <small class="mu hide" id="cn">Bu efekt rengi kullanmaz.</small></div>
@@ -83,7 +89,7 @@ a{color:var(--se)}
 <script>
 (function(){
 var $=function(i){return document.getElementById(i)};
-var S={on:false,bri:0,seg:[]},I={},E=[],sel={},slot=0,pi=-1,lcD={},ws=null,wsOk=false,bo=1000,ptm=null,tm={},lt={},tc={};
+var S={on:false,bri:0,seg:[]},I={},E=[],slot=0,pi=-1,lcD={},ws=null,wsOk=false,bo=1000,ptm=null,tm={},lt={},tc={};
 var CAPS=[4,3,3,7,13,13,7,15,3,7,15,15,13,15,13,7,7,3,14,15];
 var PRE=[[255,0,0],[255,96,0],[255,180,107],[255,220,0],[140,255,0],[0,255,70],[0,255,200],[0,210,255],[0,70,255],[108,99,255],[200,0,255],[255,255,255]];
 var W=function(){return I.access==="control"};
@@ -91,28 +97,43 @@ function toast(t,bad){var e=$("tt");e.textContent=t;e.className="";e.style.borde
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function rgb(c){return"rgb("+c[0]+","+c[1]+","+c[2]+")"}
 function segs(){return S.seg||[]}
-function chosen(){return segs().filter(function(s){return sel[s.id]})}
-function allSel(){return segs().length>0&&chosen().length===segs().length}
+/* Kanal seçimi — Windows uygulamasıyla AYNI kurallar (docs/PROTOCOL.md §3.8):
+   1 yalnızca etkin kanal seçilebilir; 2 ilk durumda tüm etkin kanallar seçilir, sonradan etkinleşen eklenmez;
+   3 kapanan kanal seçimden çıkar; 4 boş seçim geçerlidir ve HİÇBİR kanal komutu gönderilmez;
+   5 kontroller seçili en küçük kanalı (boşsa ilk etkin kanalı) gösterir; 6 seçim cihaza bir şey göndermez. */
+var SEL={init:false,on:{},
+ enabled:function(){var e={};segs().forEach(function(s){e[s.id]=1});return e},
+ reconcile:function(){var e=this.enabled(),k=Object.keys(e);if(!k.length&&!this.init)return;
+  if(!this.init){this.on={};k.forEach(function(i){SEL.on[i]=1});this.init=true;return}
+  Object.keys(this.on).forEach(function(i){if(!e[i])delete SEL.on[i]})},
+ toggle:function(id){if(!this.enabled()[id])return;if(this.on[id])delete this.on[id];else this.on[id]=1},
+ all:function(){var e=this.enabled();this.on={};Object.keys(e).forEach(function(i){SEL.on[i]=1});this.init=true},
+ none:function(){this.on={};this.init=true},
+ has:function(id){return!!this.on[id]}};
+function chosen(){return segs().filter(function(s){return SEL.has(s.id)}).sort(function(a,b){return a.id-b.id})}
 function touched(k){return Date.now()-(tc[k]||0)<700}
 function touch(k){tc[k]=Date.now()}
 /* ---------- gönderim ---------- */
 function post(o){o.v=true;fetch("/json/state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(o)})
 .then(function(r){return r.json().then(function(j){if(!r.ok){toast(j&&j.message==="wled_read_only"?"Salt okunur mod: değişiklik yapılamaz":"İstek reddedildi ("+((j&&j.message)||r.status)+")",true);return}
 if(j&&j.seg){S=j;render()}})}).catch(function(){toast("Cihaza ulaşılamadı",true)})}
-function send(o){if(!W()){toast("Salt okunur mod: kontroller kapalı",true);return}
+function send(o){if(!o){noSel();return}if(!W()){toast("Salt okunur mod: kontroller kapalı",true);return}
 if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));else post(o)}
 function thr(k,f){var n=Date.now(),d=80-(n-(lt[k]||0));clearTimeout(tm[k]);if(d<=0){lt[k]=n;f()}else tm[k]=setTimeout(function(){lt[k]=Date.now();f()},d)}
-function segCmd(f){return{seg:chosen().map(function(s){var o={id:s.id};for(var k in f)o[k]=f[k];return o})}}
-function setPower(on){send(allSel()?{on:on}:segCmd({on:on}))}
-function setBri(b){send(allSel()?{bri:b}:segCmd({bri:b}))}
-function setCol(c){if(slot===2){editPal(pi,c);return}var a=slot===0?[c]:[null,c];send(segCmd({col:a}));
+/* Yalnızca seçili kanallar; seçim boşsa null (hiçbir şey gönderilmez). Üst düzey on/bri KULLANILMAZ
+   (tüm kanalları etkilerdi); her değişiklik seçili segmentlere ayrı ayrı gider. */
+function segCmd(f){var c=chosen();if(!c.length)return null;return{seg:c.map(function(s){var o={id:s.id};for(var k in f)o[k]=f[k];return o})}}
+function setPower(on){send(segCmd({on:on}));chosen().forEach(function(s){s.on=on});render()}
+function setBri(b){send(segCmd({bri:b}));chosen().forEach(function(s){s.bri=b})}
+function setCol(c){if(slot===2){editPal(pi,c);return}var a=slot===0?[c]:[null,c],m=segCmd({col:a});if(!m){noSel();return}send(m);
  chosen().forEach(function(s){s.col=s.col||[[0,0,0],[0,0,0],[0,0,0]];s.col[slot]=c});renderCol()}
+function noSel(){toast("Kanal seçilmedi: değişiklik gönderilmedi",true);renderCol()}
 /* ---------- palet (1-5 renk, kanal başına; apal) ---------- */
 function maxP(){return I.argb&&I.argb.maxpal||5}
 function curPal(){var f=cur();return Array.isArray(f.apal)?f.apal:[]}
 function clonePal(a){return a.map(function(x){return x.slice()})}
-function sendPal(a){send(segCmd({apal:a}));chosen().forEach(function(s){s.apal=clonePal(a)})}
-function editPal(i,c){var a=clonePal(curPal());if(i<0||i>=a.length)return;a[i]=c;
+function sendPal(a){var m=segCmd({apal:a});if(!m){noSel();return}send(m);chosen().forEach(function(s){s.apal=clonePal(a)})}
+function editPal(i,c){var a=clonePal(curPal());if(i<0||i>=a.length)return;if(!chosen().length){noSel();return}a[i]=c;
  chosen().forEach(function(s){s.apal=clonePal(a)});renderPal();thr("pal",function(){send(segCmd({apal:a}))})}
 function palBase(){var a=curPal();if(slot===2&&a[pi])return a[pi];var c=(cur().col||[])[slot===1?1:0];return c||[255,255,255]}
 function renderPal(){var a=curPal(),h=$("pl"),n=maxP();h.textContent="";
@@ -128,16 +149,14 @@ $("pR").onclick=function(){var a=clonePal(curPal());if(pi>=0&&pi<a.length-1){var
 $("pD").onclick=function(){var a=clonePal(curPal());if(pi>=0&&pi<a.length){a.splice(pi,1);pi=Math.min(pi,a.length-1);if(pi<0)slot=0;sendPal(a);render()}};
 $("pC").onclick=function(){pi=-1;if(slot===2)slot=0;sendPal([]);render()};
 /* ---------- çizim ---------- */
-function cur(){return chosen()[0]||segs()[0]||{}}
+function cur(){return chosen()[0]||segs().slice().sort(function(a,b){return a.id-b.id})[0]||{}}
 function render(){
- var sg=segs();sg.forEach(function(s){if(!(s.id in sel))sel[s.id]=true});
+ var sg=segs();SEL.reconcile();
  var f=cur(),w=W();
  $("nm").textContent=I.name||"ESP32 ARGB";
- $("pw").className=S.on?"on":"";
- if(!touched("br")){var mb=allSel()?S.bri:Math.max.apply(null,chosen().map(function(s){return s.bri||0}).concat([0]));$("br").value=Math.max(1,mb);$("bv").textContent=Math.round(mb*100/255)+"%"}
- var cc=$("chc");cc.className=sg.length>1?"card":"card hide";var cs=$("chs");cs.textContent="";
- sg.forEach(function(s){var b=el("button","chip"+(sel[s.id]?" s":""));var i=el("i",s.on?"o":"");b.appendChild(i);b.appendChild(document.createTextNode("Kanal "+(s.id+1)+" · "+(s.len||0)+" LED"));
-  b.onclick=function(){sel[s.id]=!sel[s.id];if(!chosen().length)sel[s.id]=true;render()};cs.appendChild(b)});
+ $("pw").className=f.on?"on":"";
+ if(!touched("br")){var mb=f.bri||0;$("br").value=Math.max(1,mb);$("bv").textContent=Math.round(mb*100/255)+"%"}
+ renderCh();
  var fx=f.fx|0,cp=CAPS[fx]||0;
  Array.prototype.forEach.call($("fg").children,function(b,i){b.className="fx"+(i===fx?" s":"")});
  if(!touched("sp")){$("sp").value=f.sx||0;$("spv").textContent=Math.round((f.sx||0)*100/255)+"%"}
@@ -164,19 +183,29 @@ function render(){
  $("sb").textContent=(I.ip||location.hostname)+(rs?" · "+rs+" dBm":"");
  $("dot").className="dot "+(wsOk?"on":"po");
 }
+function renderCh(){var cs=$("chs"),en=SEL.enabled(),A=I.argb,ids=[0,1,2,3],c=chosen();cs.textContent="";
+ ids.forEach(function(id){var on=!!en[id],s=SEL.has(id)&&on,seg=segs().filter(function(x){return x.id===id})[0];
+  var l=el("label","chk"+(s?" s":"")+(on?"":" x"));l.id="ck"+id;var i=document.createElement("input");i.type="checkbox";i.checked=s;i.disabled=!on;
+  i.setAttribute("aria-label","CH"+(id+1));i.onchange=function(){SEL.toggle(id);render()};l.appendChild(i);
+  var t=el("span","","CH"+(id+1));l.appendChild(t);if(!on&&(seg||A))l.appendChild(el("small","mu","kapalı"));
+  if(seg&&seg.on===false)l.appendChild(el("small","mu","⏻"));cs.appendChild(l)});
+ var m=$("chm");if(!c.length){m.textContent="Kanal seçilmedi: renk ve efekt değişiklikleri gönderilmez.";m.style.color="#ffab40"}
+ else{m.textContent="Değişiklikler yalnızca seçili kanallara uygulanır: "+c.map(function(s){return"CH"+(s.id+1)}).join(", ");m.style.color=""}
+ $("chA").disabled=!Object.keys(en).length;$("chN").disabled=!c.length}
+$("chA").onclick=function(){SEL.all();render()};$("chN").onclick=function(){SEL.none();render()};
 function up(s){s=s|0;var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+"g ":"")+h+"s "+m+"d"}
 function renderCol(){var f=cur(),c=f.col||[];for(var i=0;i<2;i++)$("c"+i).style.background=rgb(c[i]||[0,0,0]);if(!touched("wh"))placeMk()}
 /* ---------- LED sayısı (Ayarlar) ---------- */
 function renderLc(){var A=I.argb;if(!A||!A.ch)return;var box=$("lc");
- if(!box.children.length)A.ch.forEach(function(c){var r=el("div","lcr");r.appendChild(el("span","grow","Kanal "+(c.id+1)));
+ if(!box.children.length)A.ch.forEach(function(c){var r=el("div","lcr");r.appendChild(el("span","grow","CH"+(c.id+1)));
   var i=document.createElement("input");i.type="number";i.inputMode="numeric";i.min=0;i.max=A.maxlen;i.className="num";i.id="ln"+c.id;
   i.oninput=function(){lcD[c.id]=1;lcCheck()};r.appendChild(i);var p=el("small","mu","");p.id="lp"+c.id;r.appendChild(p);box.appendChild(r)});
  A.ch.forEach(function(c){var i=$("ln"+c.id);if(!i)return;if(!lcD[c.id]&&document.activeElement!==i)i.value=c.n;
-  $("lp"+c.id).textContent=c.pn!=null?"→ "+c.pn+" (yeniden başlatınca)":""});
+  $("lp"+c.id).textContent=c.pn!=null&&c.pn!==c.n?"→ "+c.pn+" (yeniden başlatınca)":""});
  $("rbt").className=A.reboot?"btn":"btn hide";lcCheck()}
 function lcCheck(){var A=I.argb;if(!A||!A.ch)return;var tot=0,bad="",warn="";
  A.ch.forEach(function(c){var i=$("ln"+c.id);if(!i)return;var v=parseInt(i.value,10);
-  if(isNaN(v)||v<0||v>A.maxlen){bad="Kanal "+(c.id+1)+": 0–"+A.maxlen+" arası bir sayı girin"}else{tot+=v;if(v>A.warnlen)warn="Yüksek LED sayısı: kare hızı düşebilir"}});
+  if(isNaN(v)||v<0||v>A.maxlen){bad="CH"+(c.id+1)+": 0–"+A.maxlen+" arası bir sayı girin"}else{tot+=v;if(v>A.warnlen)warn="Yüksek LED sayısı: kare hızı düşebilir"}});
  if(!bad&&tot>A.maxtotal)bad="Toplam "+tot+" LED, "+A.maxtotal+" sınırını aşıyor";
  if(!bad&&tot>A.warntotal)warn="Yüksek toplam LED sayısı: kare hızı düşebilir";
  var m=$("lcm");m.textContent=bad||warn;m.style.color=bad?"#ff5252":"#ffab40";$("lcA").disabled=!!bad||!Object.keys(lcD).length}

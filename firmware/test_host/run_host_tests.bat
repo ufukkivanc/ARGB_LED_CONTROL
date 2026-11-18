@@ -3,8 +3,9 @@ rem WLED mapping layer host tests (MSVC). No ESP32 / PlatformIO build needed.
 rem Needs: Visual Studio "Desktop development with C++" and ArduinoJson downloaded by PlatformIO (.pio\libdeps).
 setlocal
 set "VCVARS=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+if not exist "%VCVARS%" set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 if not exist "%VCVARS%" (
-  echo vcvars64.bat not found: %VCVARS%
+  echo vcvars64.bat not found: "%VCVARS%"
   exit /b 2
 )
 call "%VCVARS%" >nul 2>nul

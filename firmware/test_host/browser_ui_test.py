@@ -335,7 +335,12 @@ async def scenarios():
     check(await p.wait("!document.getElementById('ctl').disabled"), "kontroller etkin (control)")
     check(await p.ev("document.getElementById('ban').className.includes('hide')"), "uyarı bandı gizli")
     check(await p.wait("document.getElementById('dot').className.includes('on')"), "WebSocket canlı göstergesi")
-    check(await p.ev("document.querySelectorAll('#chs .chip').length") == 2, "2 kanal çipi")
+    check(await p.ev("document.querySelectorAll('#chs input[type=checkbox]').length") == 4, "CH1–CH4 için 4 checkbox")
+    check(await p.ev("document.querySelectorAll('#chs input:not([disabled])').length") == 2, "yalnızca 2 etkin kanal seçilebilir")
+    check(await p.ev("document.querySelectorAll('#chs input:checked').length") == 2, "ilk durumda tüm etkin kanallar seçili")
+    check(await p.ev("document.querySelectorAll('#chs .chk.s').length") == 2, "seçili kanallar vurgulu")
+    check(await p.ev("['CH1','CH2','CH3','CH4'].every(function(n){return document.getElementById('chs').textContent.indexOf(n)>=0})"), "kanal adları CH1..CH4")
+    check(not await p.ev("/GPIO/i.test(document.body.innerText)"), "GPIO numarası arayüzde gösterilmiyor")
     check("Canlı" in await p.ev("document.getElementById('kv').textContent"), "bağlantı durumu 'Canlı'")
     check("-57" in await p.ev("document.getElementById('kv').textContent"), "Wi-Fi sinyali (dBm) gösteriliyor")
     check(await p.ev("document.getElementById('pw').className") == "on", "güç düğmesi açık")
@@ -346,12 +351,12 @@ async def scenarios():
     n0 = len(MOCK.log)
     await p.ev("document.getElementById('pw').click()")
     check(await p.wait("document.getElementById('pw').className===''"), "aç/kapat: sunucu çerçevesiyle UI güncellendi")
-    check(MOCK.log[n0:] == [{"on": False}], "aç/kapat komutu {'on':false}")
+    check(MOCK.log[n0:] == [{"seg": [{"id": 0, "on": False}, {"id": 1, "on": False}]}], "aç/kapat: seçili kanallara seg-düzeyi (üst düzey on yok)")
     await p.ev("document.getElementById('pw').click()")
     await p.wait("document.getElementById('pw').className==='on'")
 
     await p.ev("(function(){var e=document.getElementById('br');e.value=90;e.dispatchEvent(new Event('input'))})()")
-    check(await p.wait("true") and await _until(lambda: {"bri": 90} in MOCK.log), "parlaklık komutu {'bri':90} (tüm kanallar)")
+    check(await p.wait("true") and await _until(lambda: {"seg": [{"id": 0, "bri": 90}, {"id": 1, "bri": 90}]} in MOCK.log), "parlaklık: seçili kanallara seg-düzeyi bri")
 
     await p.ev("document.querySelectorAll('#fg .fx')[5].click()")
     check(await _until(lambda: {"seg": [{"id": 0, "fx": 5}, {"id": 1, "fx": 5}]} in MOCK.log), "efekt 5 seçimi: tüm seçili kanallara")
@@ -380,17 +385,39 @@ async def scenarios():
     await p.ev("(function(){var e=document.getElementById('rv');e.checked=true;e.dispatchEvent(new Event('change'))})()")
     check(await _until(lambda: any(m.get("seg") and m["seg"][0].get("rev") is True for m in MOCK.log)), "ters yön -> rev")
 
-    # kanal seçimi: yalnızca kanal 2
-    await p.ev("document.querySelectorAll('#chs .chip')[0].click()")
-    check(await p.wait("document.querySelectorAll('#chs .chip.s').length===1"), "kanal 1 çıkarıldı (tek kanal seçili)")
+    # kanal seçimi: yalnızca CH2 (checkbox tıklaması; seçim cihaza hiçbir şey göndermez)
+    ns = len(MOCK.log)
+    await p.ev("document.querySelector('#ck0 input').click()")
+    check(await p.wait("document.querySelectorAll('#chs .chk.s').length===1"), "CH1 çıkarıldı (yalnızca CH2 seçili)")
+    await asyncio.sleep(0.3)
+    check(MOCK.log[ns:] == [], "seçim değişimi cihaza komut göndermedi")
+    check("CH2" in await p.ev("document.getElementById('chm').textContent"), "seçili kanallar metni")
+    c1_before = [list(x) for x in MOCK.ch[0]["col"]]
+    fx1_before = MOCK.ch[0]["fx"]
+    nc = len(MOCK.log)
+    await p.ev("document.querySelectorAll('#pr .pre')[5].click()")   # yeşil hazır renk
+    check(await _until(lambda: MOCK.log[nc:] == [{"seg": [{"id": 1, "col": [[0, 255, 70]]}]}]), "hazır renk yalnızca seçili CH2'ye")
+    check(MOCK.ch[0]["col"] == c1_before and MOCK.ch[0]["fx"] == fx1_before, "seçilmeyen CH1'in rengi ve efekti korundu")
     n2 = len(MOCK.log)
     await p.ev("document.getElementById('pw').click()")
     check(await _until(lambda: MOCK.log[n2:] == [{"seg": [{"id": 1, "on": False}]}]), "tek kanal seçiliyken güç: seg-düzeyi {id:1,on:false}")
     await p.ev("(function(){var e=document.getElementById('br');e.value=40;e.dispatchEvent(new Event('input'))})()")
     check(await _until(lambda: {"seg": [{"id": 1, "bri": 40}]} in MOCK.log), "tek kanal parlaklığı seg-düzeyi")
     check(MOCK.ch[0]["on"] is True and MOCK.ch[0]["bri"] != 40, "seçili olmayan kanal 1 etkilenmedi")
-    await p.ev("document.querySelectorAll('#chs .chip')[1].click()")   # son seçili kanal kaldırılamaz
-    check(await p.ev("document.querySelectorAll('#chs .chip.s').length") >= 1, "en az bir kanal her zaman seçili")
+    # hiçbir kanal seçili değil: renk/efekt komutu GÖNDERİLMEZ
+    await p.ev("document.querySelector('#ck1 input').click()")
+    check(await p.wait("document.querySelectorAll('#chs .chk.s').length===0"), "son seçili kanal da kaldırılabilir (boş seçim)")
+    check("seçilmedi" in await p.ev("document.getElementById('chm').textContent"), "boş seçim uyarısı")
+    ne = len(MOCK.log)
+    await p.ev("document.querySelectorAll('#pr .pre')[0].click()")
+    await p.ev("document.querySelectorAll('#fg .fx')[3].click()")
+    await mouse(p, box[0] + box[2] * 0.3, box[1] + box[3] * 0.3)
+    await asyncio.sleep(0.4)
+    check(MOCK.log[ne:] == [], "boş seçimde renk/efekt komutu gönderilmedi")
+    await p.ev("document.getElementById('chA').click()")
+    check(await p.wait("document.querySelectorAll('#chs .chk.s').length===2"), "Tümü: etkin kanalların hepsi seçildi")
+    await p.ev("document.querySelector('#ck0 input').click()")   # sonraki adımlar için yalnızca CH2
+    await p.wait("document.querySelectorAll('#chs .chk.s').length===1")
 
     print("[yetenek tablosu]")
     await p.ev("document.querySelectorAll('#fg .fx')[0].click()")   # Solid: hız/yoğunluk yok
@@ -458,7 +485,7 @@ async def scenarios():
     check(await p.wait("document.getElementById('kv').textContent.includes('Yoklama')"), "bağlantı durumu 'Yoklama'")
     check(await p.ev("document.getElementById('dot').className.includes('po')"), "turuncu bağlantı göstergesi")
     await p.ev("document.getElementById('pw').click()")
-    check(await _until(lambda: any(b.get("on") is False and b.get("v") is True for b in posts)), "HTTP yedeği: POST /json/state {'on':false,'v':true}")
+    check(await _until(lambda: any(b.get("v") is True and b.get("seg") and all(x.get("on") is False for x in b["seg"]) for b in posts)), "HTTP yedeği: POST /json/state seg on:false, v:true")
     check(await p.wait("document.getElementById('pw').className===''"), "POST yanıtı UI'ya yansıdı")
     MOCK.ch[0]["bri"] = 33   # cihaz tarafında değişiklik: yoklama yakalamalı
     check(await p.wait("document.getElementById('bv').textContent==='13%'", 8), "yoklama cihaz değişikliğini yansıttı")
