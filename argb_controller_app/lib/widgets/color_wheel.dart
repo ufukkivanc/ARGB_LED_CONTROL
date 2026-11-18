@@ -4,6 +4,22 @@ import 'package:argb_controller/models/led_color.dart';
 
 /// An interactive circular HSV Color Wheel with smooth drag/tap selection
 /// and a row of quick preset color swatches.
+/// Hazır renkler. iPhone panelindeki liste (firmware/src/wled/control_page.h `PRE`) AYNI sırada ve değerde olmalıdır
+/// (test/multi_channel_test.dart denetler).
+const List<({LedColor color, String label})> kPresetColors = [
+  (color: LedColor.red, label: 'Kırmızı'),
+  (color: LedColor.orange, label: 'Turuncu'),
+  (color: LedColor.amber, label: 'Amber'),
+  (color: LedColor.yellow, label: 'Sarı'),
+  (color: LedColor.green, label: 'Yeşil'),
+  (color: LedColor.cyan, label: 'Camgöbeği'),
+  (color: LedColor.blue, label: 'Mavi'),
+  (color: LedColor.purple, label: 'Mor'),
+  (color: LedColor.pink, label: 'Pembe'),
+  (color: LedColor.warmWhite, label: 'Sıcak Beyaz'),
+  (color: LedColor.coolWhite, label: 'Soğuk Beyaz'),
+];
+
 class ColorWheel extends StatefulWidget {
   final LedColor color;
   final ValueChanged<LedColor> onColorChanged;
@@ -111,17 +127,7 @@ class _ColorWheelState extends State<ColorWheel> {
             alignment: WrapAlignment.center,
             runSpacing: 6,
             children: [
-              _buildPresetChip(LedColor.red, 'Kırmızı'),
-              _buildPresetChip(LedColor.orange, 'Turuncu'),
-              _buildPresetChip(LedColor.amber, 'Amber'),
-              _buildPresetChip(LedColor.yellow, 'Sarı'),
-              _buildPresetChip(LedColor.green, 'Yeşil'),
-              _buildPresetChip(LedColor.cyan, 'Camgöbeği'),
-              _buildPresetChip(LedColor.blue, 'Mavi'),
-              _buildPresetChip(LedColor.purple, 'Mor'),
-              _buildPresetChip(LedColor.pink, 'Pembe'),
-              _buildPresetChip(LedColor.warmWhite, 'Sıcak Beyaz'),
-              _buildPresetChip(LedColor.coolWhite, 'Soğuk Beyaz'),
+              for (final p in kPresetColors) _buildPresetChip(p.color, p.label),
             ],
           ),
         ),

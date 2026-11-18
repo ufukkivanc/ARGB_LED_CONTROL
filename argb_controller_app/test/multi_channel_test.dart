@@ -1,4 +1,6 @@
 // v0.3.2: çoklu kanal seçimi ve seçili kanallara renk uygulama.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +16,7 @@ import 'package:argb_controller/services/token_store.dart';
 import 'package:argb_controller/state/app_state.dart';
 import 'package:argb_controller/state/connection_controller.dart';
 import 'package:argb_controller/widgets/channel_selector.dart';
+import 'package:argb_controller/widgets/color_wheel.dart';
 
 import 'support/fake_esp32.dart';
 
@@ -244,6 +247,30 @@ void main() {
       expect(container.read(deviceProvider), before);
     });
 
+    test('ters yön yalnızca seçili kanallara direction:-1 olarak gider', () async {
+      container.read(channelSelectionProvider.notifier).toggle(2); // {1,3}
+      container.read(deviceProvider.notifier).setDirection(-1);
+      await settle();
+      expect(sock.sets.single['ch'], [1, 3]);
+      expect(sock.sets.single['direction'], -1);
+      expect(sock.sets.single.keys.toSet(), {'v', 'type', 'id', 'ch', 'direction'});
+    });
+
+    test('parlaklık ve güç yalnızca seçili kanallara gider (iPhone paneliyle aynı)', () async {
+      container.read(channelSelectionProvider.notifier).toggle(1); // {2,3}
+      await settle(20);
+      container.read(deviceProvider.notifier).setBrightness(77);
+      await settle();
+      container.read(deviceProvider.notifier).togglePower();
+      await settle();
+      expect(sock.sets.map((m) => m['ch']).toList(), [
+        [2, 3],
+        [2, 3],
+      ]);
+      expect(sock.sets[0]['brightness'], 77);
+      expect(sock.sets[1]['power'], isFalse);
+    });
+
     test('kontroller referans kanalı gösterir (seçili en küçük kanal)', () async {
       container.read(channelSelectionProvider.notifier).toggle(1); // {2,3}
       await settle(20);
@@ -296,6 +323,36 @@ void main() {
     testWidgets('boş seçimde uyarı gösterilir', (t) async {
       await pump(t, const ChannelSelection(selected: {}, initialized: true), (_) {});
       expect(find.textContaining('Kanal seçilmedi'), findsOneWidget);
+    });
+  });
+
+  group('Windows ↔ iPhone ve firmware sözleşmesi', () {
+    test('hazır renkler iPhone paneliyle aynı liste ve sırada', () {
+      final page = File('../firmware/src/wled/control_page.h').readAsStringSync();
+      final m = RegExp(r'var PRE=(\[\[.*?\]\]);').firstMatch(page);
+      expect(m, isNotNull);
+      final nums = RegExp(r'\d+').allMatches(m!.group(1)!).map((e) => int.parse(e.group(0)!)).toList();
+      final web = [for (var i = 0; i < nums.length; i += 3) [nums[i], nums[i + 1], nums[i + 2]]];
+      final win = [for (final p in kPresetColors) [p.color.r, p.color.g, p.color.b]];
+      expect(web, win);
+    });
+
+    test('sabit GPIO eşlemesi config.h LED_CHANNEL_HW: CH1=18 CH2=19 CH3=22 CH4=23', () {
+      final cfg = File('../firmware/include/config.h').readAsStringSync();
+      final block = RegExp(r'LED_CHANNEL_HW\[MAX_CHANNELS\] = \{(.*?)\};', dotAll: true).firstMatch(cfg)!.group(1)!;
+      final pins = RegExp(r'\{\s*(\d+)\s*,').allMatches(block).map((e) => int.parse(e.group(1)!)).toList();
+      expect(pins, [18, 19, 22, 23]);
+      // Pinler başka hiçbir kaynak dosyada sabit olarak yazılmaz (tek merkez)
+      for (final f in Directory('../firmware/src').listSync(recursive: true).whereType<File>()) {
+        expect(f.readAsStringSync().contains('_DEFAULT_GPIO'), isFalse, reason: f.path);
+      }
+    });
+
+    test('arayüzde GPIO ayarı/numarası yok (Windows kaynakları)', () {
+      for (final f in Directory('lib').listSync(recursive: true).whereType<File>()) {
+        final code = f.readAsLinesSync().where((l) => !l.trimLeft().startsWith('//')).join('\n');
+        expect(code.contains('GPIO'), isFalse, reason: f.path);
+      }
     });
   });
 }

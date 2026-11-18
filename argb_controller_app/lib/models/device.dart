@@ -99,7 +99,7 @@ class DeviceConfig {
 
   @override
   String toString() =>
-      'DeviceConfig($deviceName, $ledCount×$ledType, GPIO $gpioPin, fw $firmwareVersion)';
+      'DeviceConfig($deviceName, $ledCount×$ledType, pin $gpioPin, fw $firmwareVersion)';
 }
 
 /// Represents a physical ESP32 LED controller device.

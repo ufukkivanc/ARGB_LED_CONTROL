@@ -49,6 +49,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ref.read(deviceProvider.notifier).setSpeed(speed);
   }
 
+  void _updateDirection(bool reverse) {
+    ref.read(deviceProvider.notifier).setDirection(reverse ? -1 : 1);
+  }
+
   void _updateIntensity(int intensity) {
     ref.read(deviceProvider.notifier).setIntensity(intensity);
   }
@@ -438,6 +442,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         intensity: state.intensity,
         onIntensityChanged: _updateIntensity,
         supportedEffects: mode == AppMode.device ? conn.info?.supportedEffects : null,
+      ),
+      const SizedBox(height: 12),
+      // Ters yön: iPhone panelindeki "Ters yön" ile aynı (direction -1/1; seçili kanallara gider)
+      Material(
+        color: AppColors.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.06), width: 1),
+        ),
+        child: SwitchListTile(
+          key: const Key('direction_switch'),
+          title: const Text('Ters yön'),
+          subtitle: const Text('Animasyonu ters yönde oynatır', style: TextStyle(fontSize: 12)),
+          value: state.direction < 0,
+          onChanged: _updateDirection,
+        ),
       ),
       if (effectCaps(state.effectType).color2 && state.palette.isEmpty) ...[
         const SizedBox(height: 12),

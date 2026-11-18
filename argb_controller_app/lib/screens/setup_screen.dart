@@ -163,7 +163,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
   List<Widget> _intro(SetupController c) => [
         const _Card(children: [
-          _Numbered(1, 'ESP32\'yi çalıştırın. Kartın mavi LED\'i (GPIO2) yavaş yanıp sönüyorsa kurulum modundadır.'),
+          _Numbered(1, 'ESP32\'yi çalıştırın. Kartın mavi durum LED\'i yavaş yanıp sönüyorsa kurulum modundadır.'),
           _Numbered(2, 'Telefonunuzun Wi-Fi ayarlarında "ESP32-ARGB-Setup-XXXX" ağına bağlanın.'),
           _Numbered(3, 'AP şifresi ilk prototipte yalnızca SERİ PORTTAN öğrenilir: '
               'ESP32\'yi USB ile bilgisayara bağlayıp 115200 baud\'da seri monitörü açın ve '
