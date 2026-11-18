@@ -31,9 +31,9 @@ void setup() {
     Serial.println("==================================================");
 
     // ── Hardware Safety Pre-Init ───────────────────────────────────────────
-    // Pull CH1 GPIO18 LOW immediately upon boot to prevent spurious flashes
-    pinMode(CH1_DEFAULT_GPIO, OUTPUT);
-    digitalWrite(CH1_DEFAULT_GPIO, LOW);
+    // CH1 veri pinini (config.h LED_CHANNEL_HW) açılışta hemen LOW yap: istenmeyen yanıp sönmeyi önler
+    pinMode(LED_CHANNEL_HW[0].gpio, OUTPUT);
+    digitalWrite(LED_CHANNEL_HW[0].gpio, LOW);
 
     // ── Persistent Storage Initialization ──────────────────────────────────
     if (NvsStorage::instance().begin()) {

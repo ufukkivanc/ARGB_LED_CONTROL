@@ -9,32 +9,15 @@ LedChannel::LedChannel(uint8_t channelId)
       _lastTickMs(0) {
     _config.channelId = channelId;
 
-    // Load defaults based on channel ID
-    switch (channelId) {
-        case 1:
-            _config.enabled = CH1_DEFAULT_ENABLED;
-            _config.gpioPin = CH1_DEFAULT_GPIO;
-            _config.ledCount = CH1_DEFAULT_LED_COUNT;
-            break;
-        case 2:
-            _config.enabled = CH2_DEFAULT_ENABLED;
-            _config.gpioPin = CH2_DEFAULT_GPIO;
-            _config.ledCount = CH2_DEFAULT_LED_COUNT;
-            break;
-        case 3:
-            _config.enabled = CH3_DEFAULT_ENABLED;
-            _config.gpioPin = CH3_DEFAULT_GPIO;
-            _config.ledCount = CH3_DEFAULT_LED_COUNT;
-            break;
-        case 4:
-            _config.enabled = CH4_DEFAULT_ENABLED;
-            _config.gpioPin = CH4_DEFAULT_GPIO;
-            _config.ledCount = CH4_DEFAULT_LED_COUNT;
-            break;
-        default:
-            _config.enabled = false;
-            _config.ledCount = 0;
-            break;
+    // Varsayılanlar ve SABİT pin: config.h LED_CHANNEL_HW (tek merkez)
+    if (channelId >= 1 && channelId <= MAX_CHANNELS) {
+        const LedChannelHw& hw = LED_CHANNEL_HW[channelId - 1];
+        _config.enabled = hw.defaultEnabled;
+        _config.gpioPin = hw.gpio;
+        _config.ledCount = hw.defaultLedCount;
+    } else {
+        _config.enabled = false;
+        _config.ledCount = 0;
     }
 
     _config.maxBrightness = 255;
@@ -52,7 +35,7 @@ bool LedChannel::begin() {
     // Attempt loading saved config & state from NVS
     ChannelConfig savedCfg;
     if (NvsStorage::instance().loadChannelConfig(_config.channelId, savedCfg)) {
-        // GPIO sabittir (config.h): NVS'teki eski pin değeri (ör. v0.3.1'de CH3=21, CH4=22) yok sayılır.
+        // GPIO sabittir (config.h LED_CHANNEL_HW): NVS'teki eski pin değeri (ör. v0.3.1'de CH3=21, CH4=22) yok sayılır.
         uint8_t fixedPin = _config.gpioPin;
         if (savedCfg.gpioPin != fixedPin) {
             Serial.printf("[LedChannel %d] Fixed GPIO %d (saved value %d ignored)\n",
@@ -106,44 +89,25 @@ void LedChannel::_initFastLedController() {
     _addController(_leds, _config.ledCount);
 }
 
+// FastLED pini derleme zamanı şablon parametresi ister: pinler config.h LED_CHANNEL_HW'dan derleme zamanında alınır
+// (pin değiştirmek için bu dosya DÜZENLENMEZ).
+template <uint8_t PIN>
+static CLEDController* addFor(bool isRgb, CRGB* buf, uint16_t count) {
+    if (isRgb) return &FastLED.addLeds<WS2812B, PIN, RGB>(buf, count);
+    return &FastLED.addLeds<WS2812B, PIN, GRB>(buf, count);
+}
+static_assert(MAX_CHANNELS == 4, "_addController 4 kanal için yazıldı");
+
 void LedChannel::_addController(CRGB* buf, uint16_t count) {
     if (buf == nullptr || count == 0) return;
 
     bool isRgb = (strcasecmp(_config.colorOrder, "RGB") == 0);
-
-    // FastLED pin templates bind to known hardware channel pins
     switch (_config.channelId) {
-        case 1:
-            if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, RGB>(buf, count);
-            } else {
-                _controller = &FastLED.addLeds<WS2812B, CH1_DEFAULT_GPIO, GRB>(buf, count);
-            }
-            break;
-        case 2:
-            if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, RGB>(buf, count);
-            } else {
-                _controller = &FastLED.addLeds<WS2812B, CH2_DEFAULT_GPIO, GRB>(buf, count);
-            }
-            break;
-        case 3:
-            if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, RGB>(buf, count);
-            } else {
-                _controller = &FastLED.addLeds<WS2812B, CH3_DEFAULT_GPIO, GRB>(buf, count);
-            }
-            break;
-        case 4:
-            if (isRgb) {
-                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, RGB>(buf, count);
-            } else {
-                _controller = &FastLED.addLeds<WS2812B, CH4_DEFAULT_GPIO, GRB>(buf, count);
-            }
-            break;
-        default:
-            _controller = nullptr;
-            break;
+        case 1: _controller = addFor<LED_CHANNEL_HW[0].gpio>(isRgb, buf, count); break;
+        case 2: _controller = addFor<LED_CHANNEL_HW[1].gpio>(isRgb, buf, count); break;
+        case 3: _controller = addFor<LED_CHANNEL_HW[2].gpio>(isRgb, buf, count); break;
+        case 4: _controller = addFor<LED_CHANNEL_HW[3].gpio>(isRgb, buf, count); break;
+        default: _controller = nullptr; break;
     }
 }
 

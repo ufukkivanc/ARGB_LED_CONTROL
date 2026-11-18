@@ -2,27 +2,26 @@
 
 #include <Arduino.h>
 
-// ── Hardware Channel Defaults ──────────────────────────────────────────────
-// v0.3.2: SABİT GPIO eşlemesi (kullanıcı tarafından değiştirilemez; NVS'teki eski "pin" değeri yok sayılır):
-//   CH1 -> GPIO18, CH2 -> GPIO19, CH3 -> GPIO33, CH4 -> GPIO32
-// FastLED pini derleme zamanında ister (led_channel.cpp). Çakışma denetimi bu dosyanın sonunda static_assert ile yapılır.
+// ── LED kanal donanım eşlemesi — TEK MERKEZ ───────────────────────────────
+// Kanal pinlerini DEĞİŞTİRMEK İÇİN YALNIZCA aşağıdaki LED_CHANNEL_HW tablosunu düzenleyin; başka dosya gerekmez.
+// Pinler sabittir (derleme zamanı; FastLED pini şablon parametresi olarak ister). Kullanıcı arayüzünden değiştirilemez,
+// NVS'teki eski "pin" değeri açılışta yok sayılır. Bu dosyanın sonundaki static_assert'ler pinleri denetler:
+// rezerve/yalnızca-giriş/flash pini veya iki kanalın aynı pini kullanması DERLEMEYİ DURDURUR.
 #define MAX_CHANNELS              4
 
-#define CH1_DEFAULT_GPIO          18
-#define CH1_DEFAULT_LED_COUNT     10
-#define CH1_DEFAULT_ENABLED       true
+struct LedChannelHw {
+    uint8_t  gpio;              // WS2812B veri pini
+    uint16_t defaultLedCount;   // NVS'te kayıt yoksa (ilk açılış / fabrika sıfırlama)
+    bool     defaultEnabled;
+};
 
-#define CH2_DEFAULT_GPIO          19
-#define CH2_DEFAULT_LED_COUNT     0
-#define CH2_DEFAULT_ENABLED       false
-
-#define CH3_DEFAULT_GPIO          33
-#define CH3_DEFAULT_LED_COUNT     0
-#define CH3_DEFAULT_ENABLED       false
-
-#define CH4_DEFAULT_GPIO          32
-#define CH4_DEFAULT_LED_COUNT     0
-#define CH4_DEFAULT_ENABLED       false
+constexpr LedChannelHw LED_CHANNEL_HW[MAX_CHANNELS] = {
+    // gpio  LED  etkin
+    {  18,   10,  true  },   // CH1
+    {  19,    0,  false },   // CH2
+    {  22,    0,  false },   // CH3
+    {  23,    0,  false },   // CH4
+};
 
 // ── Wi-Fi & Provisioning Configuration ─────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS   15000
@@ -105,21 +104,27 @@
 #define SCAN_TIMEOUT_MS             45000   // tüketici güvenlik sınırı (3 x 12 sn + bekleme; normalde WiFiManager önce sonuçlandırır)
 #define SCAN_MAX_RESULTS            20
 
-// ── Sabit LED GPIO eşlemesinin derleme zamanı doğrulaması (ESP32-WROOM-32) ──
+// ── LED_CHANNEL_HW derleme zamanı doğrulaması (ESP32-WROOM-32) ──────────────
 namespace pincheck {
 constexpr bool reserved(int p) {
     return p == PAIR_BUTTON_GPIO || p == STATUS_LED_GPIO ||   // BOOT düğmesi (0), durum LED'i (2)
            p == 1 || p == 3 ||                                // UART0 (USB seri kurulum/log)
            p == 5 || p == 12 || p == 15 ||                    // strapping
            (p >= 6 && p <= 11) ||                             // SPI flash
-           (p >= 34 && p <= 39) ||                            // yalnızca giriş
+           (p >= 34 && p <= 39) ||                            // yalnızca giriş (çıkış veremez)
            p == 20 || p == 24 || (p >= 28 && p <= 31) || p > 39;   // ESP32'de yok
 }
+// C++11 uyumlu (özyinelemeli) denetimler
+constexpr bool allUsable(int i = 0) {
+    return i >= MAX_CHANNELS || (!reserved(LED_CHANNEL_HW[i].gpio) && allUsable(i + 1));
+}
+constexpr bool uniqueFrom(int i, int j) {
+    return j >= MAX_CHANNELS || (LED_CHANNEL_HW[i].gpio != LED_CHANNEL_HW[j].gpio && uniqueFrom(i, j + 1));
+}
+constexpr bool allUnique(int i = 0) {
+    return i >= MAX_CHANNELS || (uniqueFrom(i, i + 1) && allUnique(i + 1));
+}
 }  // namespace pincheck
-static_assert(!pincheck::reserved(CH1_DEFAULT_GPIO) && !pincheck::reserved(CH2_DEFAULT_GPIO) &&
-              !pincheck::reserved(CH3_DEFAULT_GPIO) && !pincheck::reserved(CH4_DEFAULT_GPIO),
-              "LED GPIO rezerve/yalnızca-giriş/flash pinine denk geliyor");
-static_assert(CH1_DEFAULT_GPIO != CH2_DEFAULT_GPIO && CH1_DEFAULT_GPIO != CH3_DEFAULT_GPIO &&
-              CH1_DEFAULT_GPIO != CH4_DEFAULT_GPIO && CH2_DEFAULT_GPIO != CH3_DEFAULT_GPIO &&
-              CH2_DEFAULT_GPIO != CH4_DEFAULT_GPIO && CH3_DEFAULT_GPIO != CH4_DEFAULT_GPIO,
-              "İki kanal aynı GPIO'yu kullanamaz");
+static_assert(sizeof(LED_CHANNEL_HW) / sizeof(LED_CHANNEL_HW[0]) == MAX_CHANNELS, "LED_CHANNEL_HW her kanal için bir satır içermeli");
+static_assert(pincheck::allUsable(), "LED_CHANNEL_HW: rezerve/yalnızca-giriş/flash pini kullanılamaz");
+static_assert(pincheck::allUnique(), "LED_CHANNEL_HW: iki kanal aynı GPIO'yu kullanamaz");
