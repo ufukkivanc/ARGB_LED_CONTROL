@@ -91,7 +91,8 @@ a{color:var(--se)}
 var $=function(i){return document.getElementById(i)};
 var S={on:false,bri:0,seg:[]},I={},E=[],slot=0,pi=-1,lcD={},ws=null,wsOk=false,bo=1000,ptm=null,tm={},lt={},tc={};
 var CAPS=[4,3,3,7,13,13,7,15,3,7,15,15,13,15,13,7,7,3,14,15];
-var PRE=[[255,0,0],[255,96,0],[255,180,107],[255,220,0],[140,255,0],[0,255,70],[0,255,200],[0,210,255],[0,70,255],[108,99,255],[200,0,255],[255,255,255]];
+/* Hazır renkler: Windows uygulamasıyla AYNI liste ve sıra (lib/widgets/color_wheel.dart, LedColor sabitleri) */
+var PRE=[[255,0,0],[255,100,0],[255,191,0],[255,255,0],[0,255,0],[0,255,255],[0,0,255],[128,0,255],[255,20,147],[255,180,107],[200,220,255]];
 var W=function(){return I.access==="control"};
 function toast(t,bad){var e=$("tt");e.textContent=t;e.className="";e.style.borderColor=bad?"#ff5252":"#fff3";clearTimeout(toast.t);toast.t=setTimeout(function(){e.className="hide"},3500)}
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}

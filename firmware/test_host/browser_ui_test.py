@@ -362,8 +362,9 @@ async def scenarios():
     check(await _until(lambda: {"seg": [{"id": 0, "fx": 5}, {"id": 1, "fx": 5}]} in MOCK.log), "efekt 5 seçimi: tüm seçili kanallara")
     check(await p.wait("document.querySelectorAll('#fg .fx')[5].className.includes('s')"), "seçili efekt vurgulandı (sunucu doğruladı)")
 
-    await p.ev("document.querySelectorAll('#pr .pre')[8].click()")   # mavi
-    check(await _until(lambda: any(m.get("seg") and m["seg"][0].get("col") == [[0, 70, 255]] for m in MOCK.log)), "hazır renk -> col[0]")
+    check(await p.ev("document.querySelectorAll('#pr .pre').length") == 11, "11 hazır renk (Windows ile aynı liste)")
+    await p.ev("document.querySelectorAll('#pr .pre')[6].click()")   # mavi
+    check(await _until(lambda: any(m.get("seg") and m["seg"][0].get("col") == [[0, 0, 255]] for m in MOCK.log)), "hazır renk -> col[0]")
     # 2. renk yuvası
     await p.ev("document.getElementById('s1').click()")
     await p.ev("document.querySelectorAll('#pr .pre')[0].click()")   # kırmızı
@@ -395,8 +396,8 @@ async def scenarios():
     c1_before = [list(x) for x in MOCK.ch[0]["col"]]
     fx1_before = MOCK.ch[0]["fx"]
     nc = len(MOCK.log)
-    await p.ev("document.querySelectorAll('#pr .pre')[5].click()")   # yeşil hazır renk
-    check(await _until(lambda: MOCK.log[nc:] == [{"seg": [{"id": 1, "col": [[0, 255, 70]]}]}]), "hazır renk yalnızca seçili CH2'ye")
+    await p.ev("document.querySelectorAll('#pr .pre')[4].click()")   # yeşil hazır renk
+    check(await _until(lambda: MOCK.log[nc:] == [{"seg": [{"id": 1, "col": [[0, 255, 0]]}]}]), "hazır renk yalnızca seçili CH2'ye")
     check(MOCK.ch[0]["col"] == c1_before and MOCK.ch[0]["fx"] == fx1_before, "seçilmeyen CH1'in rengi ve efekti korundu")
     n2 = len(MOCK.log)
     await p.ev("document.getElementById('pw').click()")
