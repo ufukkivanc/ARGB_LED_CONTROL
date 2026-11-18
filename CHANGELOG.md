@@ -2,7 +2,7 @@
 
 Biçim: [Keep a Changelog](https://keepachangelog.com/). Sürümler: uygulama `pubspec.yaml` (`x.y.z+n`), firmware `FIRMWARE_VERSION`; ikisi aynı numarayı taşır.
 
-## [0.3.2] — Yayımlanmadı
+## [0.3.2] — 2026-11-18
 
 ### Eklendi
 - **Çoklu kanal seçimi (Windows uygulaması + iPhone paneli):** CH1–CH4 için checkbox; birden çok kanal aynı anda seçilebilir, seçili
