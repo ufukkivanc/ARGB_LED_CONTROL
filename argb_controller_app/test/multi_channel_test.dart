@@ -337,11 +337,11 @@ void main() {
       expect(web, win);
     });
 
-    test('sabit GPIO eşlemesi config.h LED_CHANNEL_HW: CH1=18 CH2=19 CH3=22 CH4=23', () {
+    test('sabit GPIO eşlemesi config.h LED_CHANNEL_HW: CH1=19 CH2=21 CH3=22 CH4=23', () {
       final cfg = File('../firmware/include/config.h').readAsStringSync();
       final block = RegExp(r'LED_CHANNEL_HW\[MAX_CHANNELS\] = \{(.*?)\};', dotAll: true).firstMatch(cfg)!.group(1)!;
       final pins = RegExp(r'\{\s*(\d+)\s*,').allMatches(block).map((e) => int.parse(e.group(1)!)).toList();
-      expect(pins, [18, 19, 22, 23]);
+      expect(pins, [19, 21, 22, 23]);
       // Pinler başka hiçbir kaynak dosyada sabit olarak yazılmaz (tek merkez)
       for (final f in Directory('../firmware/src').listSync(recursive: true).whereType<File>()) {
         expect(f.readAsStringSync().contains('_DEFAULT_GPIO'), isFalse, reason: f.path);

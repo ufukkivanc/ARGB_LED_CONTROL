@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""GERÇEK ESP32 v0.3.2 çoklu kanal testi (yerel ağ): sabit GPIO, bağımsız kanal renk/efekti, çoklu kanal 'set',
+"""GERÇEK ESP32 v0.3.3 çoklu kanal testi (yerel ağ): sabit GPIO, bağımsız kanal renk/efekti, çoklu kanal 'set',
 WebSocket yayını, NVS kalıcılığı (yeniden başlatma sonrası) ve özgün ayarların geri yüklenmesi.
 
 Kullanım:  python multichannel_device_test.py <ip|esp32-argb.local> [--no-reboot]
@@ -7,7 +7,7 @@ Kullanım:  python multichannel_device_test.py <ip|esp32-argb.local> [--no-reboo
   Token yazdırılmaz; test sonunda iptal edilir. Kanalların özgün durumu testten önce okunur ve sonda geri yazılır.
 
 Adımlar:
-  M1  /api/info: fw 0.3.2, kanal pinleri CH1=18 CH2=19 CH3=22 CH4=23, LED sayıları.
+  M1  /api/info: fw 0.3.3, kanal pinleri CH1=19 CH2=21 CH3=22 CH4=23, LED sayıları.
   M2  Bağımsız kanallar: her kanala farklı renk+efekt (tek kanallık 'set'); diğer kanallar değişmez.
   M3  Çoklu kanal: REST set ch:[1,3] color -> CH1/CH3 rengi değişir, efektleri korunur; CH2/CH4 hiç değişmez.
   M4  WebSocket: set ch:[2,4] effect -> ack + yayın; yayında yalnızca CH2/CH4; renkleri korunur.
@@ -21,8 +21,8 @@ import time
 
 from lan_e2e_test import Http, MiniWs
 
-EXPECT_FW = "0.3.2"
-EXPECT_PINS = {1: 18, 2: 19, 3: 22, 4: 23}
+EXPECT_FW = "0.3.3"
+EXPECT_PINS = {1: 19, 2: 21, 3: 22, 4: 23}
 FIELDS = ("power", "color", "color2", "effect", "brightness", "speed", "direction", "intensity", "palette")
 
 passed, failed = 0, []
@@ -95,7 +95,7 @@ def main():
             break
         time.sleep(1)
     check(disc is not None and disc.get("pairingOpen") is True, "eşleştirme penceresi açık")
-    st, pair = pub.req("POST", "/api/pair", {"clientName": "e2e-multichannel (v0.3.2)"}, auth=False)
+    st, pair = pub.req("POST", "/api/pair", {"clientName": "e2e-multichannel (v0.3.3)"}, auth=False)
     token, token_id = pair.get("token"), pair.get("tokenId")
     check(st == 200 and bool(token), "token alındı (yazdırılmaz)", f"tokenId={token_id}")
     if not token:
@@ -108,7 +108,7 @@ def main():
         check(st == 200 and info.get("fw") == EXPECT_FW, f"fw {EXPECT_FW}", str(info.get("fw")))
         cfg = {c["ch"]: c for c in info.get("channelConfigs", [])}
         pins = {ch: cfg.get(ch, {}).get("gpio") for ch in range(1, 5)}
-        check(pins == EXPECT_PINS, "GPIO eşlemesi CH1=18 CH2=19 CH3=22 CH4=23", str(pins))
+        check(pins == EXPECT_PINS, "GPIO eşlemesi CH1=19 CH2=21 CH3=22 CH4=23", str(pins))
         check(all(cfg.get(ch, {}).get("enabled") for ch in range(1, 5)), "4 kanal etkin",
               str({ch: (cfg.get(ch, {}).get("enabled"), cfg.get(ch, {}).get("ledCount")) for ch in range(1, 5)}))
         print("    LED sayıları:", {ch: cfg.get(ch, {}).get("ledCount") for ch in range(1, 5)}, flush=True)

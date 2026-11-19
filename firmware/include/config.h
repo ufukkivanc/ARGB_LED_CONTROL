@@ -17,8 +17,8 @@ struct LedChannelHw {
 
 constexpr LedChannelHw LED_CHANNEL_HW[MAX_CHANNELS] = {
     // gpio  LED  etkin
-    {  18,   10,  true  },   // CH1
-    {  19,    0,  false },   // CH2
+    {  19,   10,  true  },   // CH1
+    {  21,    0,  false },   // CH2
     {  22,    0,  false },   // CH3
     {  23,    0,  false },   // CH4
 };
@@ -46,7 +46,7 @@ constexpr LedChannelHw LED_CHANNEL_HW[MAX_CHANNELS] = {
 #define MDNS_HOSTNAME             "esp32-argb"
 #define HTTP_PORT                 80
 #define WS_ENDPOINT               "/ws"
-#define FIRMWARE_VERSION          "0.3.2"
+#define FIRMWARE_VERSION          "0.3.3"
 #define DEVICE_MODEL              "ESP32-WROOM-32"
 
 // ── WLED uyumluluk katmanı (docs/WLED_COMPAT.md) ───────────────────────────
