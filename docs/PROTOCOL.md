@@ -81,7 +81,7 @@ Stage 4B: TXT `version`, `model`, `id`, `proto=1`, `paired=0|1`. **`mac` kaldır
 | `ledType` | string | `"WS2812B"` | şimdilik sabit |
 | `colorOrder` | string | `"GRB"`, `"RGB"` | **Yeniden başlatma gerektirir** |
 | `maxBrightness` | int | 0–255 | Anında uygulanır (güç/ısı sınırı) |
-| `gpio` | int | **salt okunur** | Sabit, derleme zamanlı (v0.3.2: CH1=18, CH2=19, CH3=22, CH4=23; v0.3.1 ve öncesi CH3=21, CH4=22). NVS'teki eski `pin` değeri yok sayılır. Arayüzlerde gösterilmez. |
+| `gpio` | int | **salt okunur** | Sabit, derleme zamanlı (v0.3.3: CH1=19, CH2=21, CH3=22, CH4=23; v0.3.2: CH1=18, CH2=19; v0.3.1 ve öncesi CH1=18, CH2=19, CH3=21, CH4=22). NVS'teki eski `pin` değeri yok sayılır. Arayüzlerde gösterilmez. |
 
 Toplam LED bütçesi: tüm kanallarda `Σ ledCount ≤ MAX_TOTAL_LEDS` (öneri: 1024; her LED 3 bayt RAM + FastLED/RMT tamponları).
 Aşılırsa `error: led_budget_exceeded`.
@@ -224,15 +224,15 @@ denetleyici yeni tampona bağlanır, efekt tamponları sıfırlanır. Yalnızca 
 Sert sınırlar 512/kanal ve 1024 toplam kalır; **300/kanal ve 600 toplam üstünde yalnızca uyarı** gösterilir. `info.perf` ve WLED `info.leds.fps` ölçülen kare hızını verir.
 Güç kaynağı hesabı veya yazılımsal güç yönetimi yoktur (harici besleme kullanılır).
 
-### 3.8 Sabit GPIO eşlemesi ve çoklu kanal seçimi (v0.3.2 — protokol değişikliği yok)
+### 3.8 Sabit GPIO eşlemesi ve çoklu kanal seçimi (v0.3.2, pinler v0.3.3 — protokol değişikliği yok)
 
-**GPIO (sabit, kullanıcı değiştiremez):** CH1 → GPIO18, CH2 → GPIO19, CH3 → GPIO22, CH4 → GPIO23.
+**GPIO (sabit, kullanıcı değiştiremez, v0.3.3):** CH1 → GPIO19, CH2 → GPIO21, CH3 → GPIO22, CH4 → GPIO23.
 Tüm kanal pinleri (ve varsayılan LED sayısı/etkinlik) **tek merkezden** yönetilir: `firmware/include/config.h` → `LED_CHANNEL_HW`.
 Pin değiştirmek için yalnızca bu tablo düzenlenir; `led_channel.cpp` FastLED şablon pinini, `main.cpp` açılış ön-ayarını bu tablodan alır.
 Derleme zamanı `static_assert`'leri: hiçbir LED pini BOOT düğmesi (0), durum LED'i (2), UART0 (1/3), strapping (5/12/15), SPI flash (6–11),
 yalnızca-giriş (34–39) veya ESP32'de olmayan pin olamaz; iki kanal aynı pini kullanamaz (ihlal derlemeyi durdurur — doğrulandı).
-v0.3.1'den güncellemede NVS'teki `pin_N` değeri açılışta yok sayılır (farklıysa seri logda bir kez yazılır); diğer kanal ayarları aynen yüklenir.
-**Donanım notu:** v0.3.1'de CH3=21, CH4=22 idi; v0.3.2'de CH3 şeridi GPIO22'ye, CH4 şeridi GPIO23'e bağlanmalıdır.
+Önceki sürümlerden güncellemede NVS'teki `pin_N` değeri açılışta yok sayılır (farklıysa seri logda bir kez yazılır); diğer kanal ayarları aynen yüklenir.
+**Donanım notu:** v0.3.1: 18/19/21/22; v0.3.2: 18/19/22/23; **v0.3.3: CH1 şeridi GPIO19'a, CH2 şeridi GPIO21'e** bağlanmalıdır (CH3=22, CH4=23 değişmedi).
 
 **Arayüz eşitliği:** Windows uygulaması ve iPhone paneli aynı kontrolleri sunar: CH1–CH4 çoklu seçim, renk çarkı, aynı 11 hazır renk
 (aynı sıra; test denetler), 2. renk (yalnızca 2. rengi kullanan efektlerde), 1–5 renk palet, 20 efekt, hız, yoğunluk, ters yön, parlaklık,

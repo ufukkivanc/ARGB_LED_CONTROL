@@ -1,7 +1,7 @@
 name: argb_controller
 description: "ESP32 Smart ARGB LED Controller - Premium lighting control app"
 publish_to: 'none'
-version: 0.3.2+3
+version: 0.3.3+4
 
 environment:
   sdk: ^3.8.1

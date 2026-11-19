@@ -2,6 +2,17 @@
 
 Biçim: [Keep a Changelog](https://keepachangelog.com/). Sürümler: uygulama `pubspec.yaml` (`x.y.z+n`), firmware `FIRMWARE_VERSION`; ikisi aynı numarayı taşır.
 
+## [0.3.3] — 2026-11-19
+
+### Değişti
+- **Sabit GPIO eşlemesi:** **CH1 → GPIO19, CH2 → GPIO21**, CH3 → GPIO22, CH4 → GPIO23 (v0.3.2: CH1=18, CH2=19).
+  **CH1 ve CH2 kablolarını yeni pinlere taşıyın**; CH3/CH4 değişmedi. Değişiklik yalnızca `firmware/include/config.h` → `LED_CHANNEL_HW`.
+  GPIO21 firmware'de başka bir bileşen tarafından kullanılmaz (I2C/SPI yok; rezerve/strapping/flash pini değil; `static_assert` denetimi geçer).
+- Güncellemede NVS'teki eski pin değeri yok sayılır (seri logda `Fixed GPIO 19 (saved value 18 ignored)`); LED sayısı, renk, efekt,
+  palet, parlaklık, Wi-Fi ve eşleştirmeler korunur.
+- `firmware/test_host/multichannel_device_test.py` yeni pinleri ve `fw 0.3.3`'ü bekler.
+- Windows uygulaması, iPhone paneli, API (protokol sürümü 1) ve LED efektlerinde değişiklik yok; uygulama sürümü yalnızca numara olarak 0.3.3+4.
+
 ## [0.3.2] — 2026-11-18
 
 ### Eklendi

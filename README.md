@@ -12,7 +12,7 @@ Docs are mostly Turkish; code identifiers and commit messages are English.
 
 | Alan | Durum |
 |---|---|
-| **LED kontrolü** | 4 bağımsız kanal (sabit GPIO: CH1=18, CH2=19, CH3=22, CH4=23; tek merkez `firmware/include/config.h` → `LED_CHANNEL_HW`), çoklu kanal seçimi (CH1–CH4 checkbox), WS2812B; 20 efekt (hız, yoğunluk, 2 renk, yön); kanal başına durum NVS'te (debounce'lu yazım) |
+| **LED kontrolü** | 4 bağımsız kanal (sabit GPIO: CH1=19, CH2=21, CH3=22, CH4=23; tek merkez `firmware/include/config.h` → `LED_CHANNEL_HW`), çoklu kanal seçimi (CH1–CH4 checkbox), WS2812B; 20 efekt (hız, yoğunluk, 2 renk, yön); kanal başına durum NVS'te (debounce'lu yazım) |
 | **Çok renkli palet** | Kanal başına 1–5 renkli özel palet (ekle/değiştir/sil/sırala, gerçek renk çarkı); doluysa efektler yalnızca palet renklerini kullanır, boşsa eski davranış. Windows + iPhone paneli, REST/WS/WLED üzerinden senkron, NVS'te kalıcı (`docs/PROTOCOL.md` §3.7) |
 | **Kanal başına LED sayısı** | Her kanal için ayrı sayı (0–512, toplam ≤ 1024), yeniden başlatmadan uygulanır; Windows: Cihaz ayarları, iPhone: Ayarlar kartı. Mevcut kayıtlı sayılar otomatik değiştirilmez |
 | **API** | HTTP + WebSocket (`/ws`), JSON protokolü, **token tabanlı eşleştirme** (fiziksel BOOT düğmesiyle 120 sn'lik pencere), hız sınırlama, komut kuyruğu (core 0 → core 1 tek yazar) |
@@ -49,6 +49,12 @@ Release'teki `ARGBController-firmware-esp32dev-vX.Y.Z-merged.bin` tek dosyadır 
 
 ```powershell
 python -m esptool --chip esp32 --port COM3 --baud 921600 write_flash 0x0 ARGBController-firmware-esp32dev-vX.Y.Z-merged.bin
+```
+
+**Dikkat:** `merged.bin` 0x0'dan yazılınca NVS bölgesi (0x9000–0xDFFF) de üzerine yazılır; Wi-Fi, eşleştirme ve LED ayarları silinir. Ayarları korumak için güncellemede `...-app.bin` kullanın:
+
+```powershell
+python -m esptool --chip esp32 --port COM3 --baud 921600 write_flash 0x10000 ARGBController-firmware-esp32dev-vX.Y.Z-app.bin
 ```
 
 `...-app.bin` yalnızca uygulama bölümüdür (0x10000; bootloader/bölüm tablosu zaten yüklüyse). Her dosyanın SHA-256 özeti `SHA256SUMS.txt` içindedir. Kayıtlı Wi-Fi/palet/LED sayısı ayarları (NVS) uygulama bölümü güncellenince korunur; tam silme yapmayın.
